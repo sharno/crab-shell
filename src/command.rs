@@ -2,8 +2,9 @@ use crate::{Error, Result, Shell};
 
 use std::{
     ffi::OsString,
+    fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command as StdCommand, ExitStatus, Output, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
@@ -112,6 +113,42 @@ impl Command {
         Ok(self.spawn_and_wait()?.status)
     }
 
+    /// Runs the command while inheriting stdout/stderr from the parent process.
+    pub fn run(&self) -> Result<()> {
+        let mut command = StdCommand::new(&self.program);
+        command.args(&self.args);
+        if self.clear_env {
+            command.env_clear();
+        }
+        command.envs(self.env.iter().cloned());
+        if let Some(dir) = &self.current_dir {
+            command.current_dir(dir);
+        }
+        if self.stdin.is_some() {
+            command.stdin(Stdio::piped());
+        } else if self.inherit_stdin {
+            command.stdin(Stdio::inherit());
+        }
+        command.stdout(Stdio::inherit());
+        command.stderr(Stdio::inherit());
+        let mut child = command.spawn()?;
+        if let Some(input) = &self.stdin {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input)?;
+            }
+        }
+        let status = child.wait()?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::Command {
+                program: self.program.clone(),
+                status,
+                stderr: "stderr inherited by parent".into(),
+            })
+        }
+    }
+
     /// Returns the command stdout decoded as UTF-8 text.
     pub fn read(&self) -> Result<String> {
         Ok(self.output()?.stdout_string()?)
@@ -125,6 +162,122 @@ impl Command {
             .map(|line| line.trim_end_matches('\r').to_string())
             .collect::<Vec<_>>();
         Ok(Shell::from_iter(lines))
+    }
+
+    /// Streams stderr line-by-line as the command executes.
+    pub fn stream_stderr(&self) -> Result<Shell<Result<String>>> {
+        let mut command = self.build_std_command();
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        let mut child = command.spawn()?;
+        if let Some(input) = &self.stdin {
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(input)?;
+            }
+        }
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "missing stdout pipe",
+            )))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "missing stderr pipe",
+            )))?;
+        let (tx, rx) = mpsc::channel();
+        let program = self.program.clone();
+        thread::spawn(move || {
+            let stdout_handle = thread::spawn(move || -> String {
+                let mut buf = String::new();
+                let mut reader = BufReader::new(stdout);
+                let _ = reader.read_to_string(&mut buf);
+                buf
+            });
+            {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let send_line =
+                                line.trim_end_matches(&['\r', '\n'][..])
+                                    .to_string();
+                            if tx.send(Ok(send_line)).is_err() {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                let _ = stdout_handle.join();
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = tx.send(Err(Error::Io(err)));
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            let _ = stdout_handle.join();
+                            return;
+                        }
+                    }
+                }
+            }
+            let stdout_output = match stdout_handle.join() {
+                Ok(buf) => buf,
+                Err(_) => String::new(),
+            };
+            match child.wait() {
+                Ok(status) => {
+                    if !status.success() {
+                        let _ = tx.send(Err(Error::Command {
+                            program,
+                            status,
+                            stderr: stdout_output,
+                        }));
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(Error::Io(err)));
+                }
+            }
+        });
+        Ok(Shell::new(ReceiverIter::new(rx)))
+    }
+
+    /// Writes stdout to the specified file, replacing existing contents.
+    pub fn write_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
+        let output = self.output()?;
+        fs::write(path, &output.stdout)?;
+        Ok(())
+    }
+
+    /// Appends stdout to the specified file.
+    pub fn append_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
+        let output = self.output()?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        file.write_all(&output.stdout)?;
+        Ok(())
+    }
+
+    /// Writes stdout to a file while still returning it to the caller.
+    pub fn tee(&self, path: impl AsRef<Path>) -> Result<CommandOutput> {
+        let output = self.output()?;
+        fs::write(path, &output.stdout)?;
+        Ok(output)
+    }
+
+    /// Writes stderr to a file while still returning captured output.
+    pub fn tee_stderr(&self, path: impl AsRef<Path>) -> Result<CommandOutput> {
+        let output = self.output()?;
+        fs::write(path, &output.stderr)?;
+        Ok(output)
     }
 
     /// Creates a [`Pipeline`] with another command.
@@ -339,6 +492,86 @@ impl Pipeline {
             .collect::<Vec<_>>();
         Ok(Shell::from_iter(lines))
     }
+
+    /// Writes the pipeline output to a file, overwriting existing contents.
+    pub fn write_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
+        let output = self.output()?;
+        fs::write(path, &output.stdout)?;
+        Ok(())
+    }
+
+    /// Appends the pipeline output to a file.
+    pub fn append_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
+        let output = self.output()?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        file.write_all(&output.stdout)?;
+        Ok(())
+    }
+
+    /// Writes output to a file while returning the captured data.
+    pub fn tee(&self, path: impl AsRef<Path>) -> Result<CommandOutput> {
+        let output = self.output()?;
+        fs::write(path, &output.stdout)?;
+        Ok(output)
+    }
+
+    /// Writes stderr to a file while still returning the captured output.
+    pub fn tee_stderr(&self, path: impl AsRef<Path>) -> Result<CommandOutput> {
+        let output = self.output()?;
+        fs::write(path, &output.stderr)?;
+        Ok(output)
+    }
+
+    /// Streams stdout of the final pipeline stage line-by-line.
+    pub fn stream_lines(&self) -> Result<Shell<Result<String>>> {
+        if self.stages.is_empty() {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "empty pipeline",
+            )));
+        }
+        let mut input: Option<Vec<u8>> = None;
+        for (idx, stage) in self.stages.iter().enumerate() {
+            let mut stage = stage.clone();
+            if let Some(stdin) = input.take() {
+                stage = stage.stdin(stdin);
+            }
+            let is_last = idx == self.stages.len() - 1;
+            if is_last {
+                return stage.stream_lines();
+            }
+            let output = stage.output()?;
+            input = Some(output.stdout);
+        }
+        unreachable!("pipeline always has at least one stage")
+    }
+
+    /// Streams stderr of the final pipeline stage line-by-line.
+    pub fn stream_stderr(&self) -> Result<Shell<Result<String>>> {
+        if self.stages.is_empty() {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "empty pipeline",
+            )));
+        }
+        let mut input: Option<Vec<u8>> = None;
+        for (idx, stage) in self.stages.iter().enumerate() {
+            let mut stage = stage.clone();
+            if let Some(stdin) = input.take() {
+                stage = stage.stdin(stdin);
+            }
+            let is_last = idx == self.stages.len() - 1;
+            if is_last {
+                return stage.stream_stderr();
+            }
+            let output = stage.output()?;
+            input = Some(output.stdout);
+        }
+        unreachable!("pipeline always has at least one stage")
+    }
 }
 
 struct ReceiverIter<T> {
@@ -362,6 +595,15 @@ impl<T> Iterator for ReceiverIter<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
+
+    fn stderr_command() -> Command {
+        if cfg!(windows) {
+            Command::new("cmd").arg("/C").arg("echo warn 1>&2")
+        } else {
+            Command::new("sh").arg("-c").arg("echo warn 1>&2")
+        }
+    }
 
     #[test]
     fn stream_lines_echoes() -> Result<()> {
@@ -375,10 +617,76 @@ mod tests {
     }
 
     #[test]
+    fn pipeline_stream_lines() -> Result<()> {
+        let pipeline = sh("echo foo").pipe(sh("more"));
+        let lines: Result<Vec<_>> = pipeline.stream_lines()?.collect();
+        let lines = lines?;
+        assert!(lines
+            .iter()
+            .any(|line| line.to_lowercase().contains("foo")));
+        Ok(())
+    }
+
+    #[test]
+    fn stream_stderr_captures() -> Result<()> {
+        let cmd = stderr_command();
+        let lines: Result<Vec<_>> = cmd.stream_stderr()?.collect();
+        let lines = lines?;
+        assert!(lines
+            .iter()
+            .any(|line| line.to_lowercase().contains("warn")));
+        Ok(())
+    }
+
+    #[test]
+    fn pipeline_stream_stderr() -> Result<()> {
+        let pipeline = sh("echo hi").pipe(stderr_command());
+        let lines: Result<Vec<_>> = pipeline.stream_stderr()?.collect();
+        let lines = lines?;
+        assert!(lines
+            .iter()
+            .any(|line| line.to_lowercase().contains("warn")));
+        Ok(())
+    }
+
+    #[test]
     fn pipeline_chains_basic_commands() -> Result<()> {
         let pipeline = sh("echo foo").pipe(sh("more"));
         let output = pipeline.read()?;
         assert!(output.to_lowercase().contains("foo"));
+        Ok(())
+    }
+
+    #[test]
+    fn run_inherits_stdio() {
+        assert!(sh("exit 0").run().is_ok());
+        assert!(sh("exit 1").run().is_err());
+    }
+
+    #[test]
+    fn tee_writes_files() -> Result<()> {
+        let dir = tempdir()?;
+        let file = dir.path().join("out.txt");
+        let output = sh("echo hi").tee(&file)?;
+        assert!(file.exists());
+        assert!(String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("hi"));
+
+        let pipe_file = dir.path().join("pipe.txt");
+        let pipeline = sh("echo hi").pipe(sh("more"));
+        let output = pipeline.tee(&pipe_file)?;
+        assert!(pipe_file.exists());
+        assert!(String::from_utf8_lossy(&output.stdout)
+            .to_lowercase()
+            .contains("hi"));
+
+        let err_file = dir.path().join("err.txt");
+        let err_output = stderr_command().tee_stderr(&err_file)?;
+        assert!(err_file.exists());
+        assert!(String::from_utf8_lossy(&err_output.stderr)
+            .to_lowercase()
+            .contains("warn"));
         Ok(())
     }
 }
