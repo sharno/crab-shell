@@ -127,6 +127,11 @@ impl Command {
         Ok(Shell::from_iter(lines))
     }
 
+    /// Creates a [`Pipeline`] with another command.
+    pub fn pipe(self, next: Command) -> Pipeline {
+        Pipeline::new(self, next)
+    }
+
     /// Streams stdout line-by-line as the command executes.
     ///
     /// The resulting shell yields `Result<String>` so that consumers can surface
@@ -282,6 +287,60 @@ impl CommandOutput {
     }
 }
 
+/// Sequence of commands executed with stdout piped into the next stage.
+#[derive(Debug, Clone)]
+pub struct Pipeline {
+    stages: Vec<Command>,
+}
+
+impl Pipeline {
+    pub fn new(first: Command, second: Command) -> Self {
+        Self {
+            stages: vec![first, second],
+        }
+    }
+
+    /// Adds another stage to the pipeline.
+    pub fn pipe(mut self, next: Command) -> Self {
+        self.stages.push(next);
+        self
+    }
+
+    /// Executes the pipeline and returns the last stage's output.
+    pub fn output(&self) -> Result<CommandOutput> {
+        let mut input: Option<Vec<u8>> = None;
+        let mut last = None;
+        for stage in &self.stages {
+            let mut stage = stage.clone();
+            if let Some(stdin) = input.take() {
+                stage = stage.stdin(stdin);
+            }
+            let output = stage.output()?;
+            input = Some(output.stdout.clone());
+            last = Some(output);
+        }
+        last.ok_or_else(|| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "empty pipeline",
+            ))
+        })
+    }
+
+    pub fn read(&self) -> Result<String> {
+        Ok(self.output()?.stdout_string()?)
+    }
+
+    pub fn lines(&self) -> Result<Shell<String>> {
+        let text = self.read()?;
+        let lines = text
+            .lines()
+            .map(|line| line.trim_end_matches('\r').to_string())
+            .collect::<Vec<_>>();
+        Ok(Shell::from_iter(lines))
+    }
+}
+
 struct ReceiverIter<T> {
     rx: Receiver<T>,
 }
@@ -312,6 +371,14 @@ mod tests {
         let cleaned: Vec<_> =
             lines.into_iter().map(|line| line.trim().to_string()).collect();
         assert_eq!(cleaned, vec!["first".to_string(), "second".to_string()]);
+        Ok(())
+    }
+
+    #[test]
+    fn pipeline_chains_basic_commands() -> Result<()> {
+        let pipeline = sh("echo foo").pipe(sh("more"));
+        let output = pipeline.read()?;
+        assert!(output.to_lowercase().contains("foo"));
         Ok(())
     }
 }

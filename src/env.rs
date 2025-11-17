@@ -11,12 +11,16 @@ pub fn var(key: impl AsRef<OsStr>) -> Option<OsString> {
 
 /// Sets an environment variable for the current process.
 pub fn set_var(key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) {
-    env::set_var(key, value);
+    unsafe {
+        env::set_var(key, value);
+    }
 }
 
 /// Removes an environment variable for the current process.
 pub fn remove_var(key: impl AsRef<OsStr>) {
-    env::remove_var(key);
+    unsafe {
+        env::remove_var(key);
+    }
 }
 
 /// Returns the user's home directory, if any.
@@ -66,8 +70,8 @@ mod tests {
     fn set_and_get_env() {
         set_var("CRAB_SHELL_TEST_VAR", "abc");
         assert_eq!(
-            var("CRAB_SHELL_TEST_VAR").as_deref(),
-            Some(OsStr::new("abc"))
+            var("CRAB_SHELL_TEST_VAR").and_then(|v| v.into_string().ok()),
+            Some("abc".into())
         );
         remove_var("CRAB_SHELL_TEST_VAR");
         assert!(var("CRAB_SHELL_TEST_VAR").is_none());

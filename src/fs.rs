@@ -1,12 +1,32 @@
 use crate::{Result, Shell};
 
 use std::{
+    env,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use glob::glob as glob_iter;
+
+/// Metadata about a filesystem path captured during listing operations.
+#[derive(Debug)]
+pub struct PathEntry {
+    pub path: PathBuf,
+    pub metadata: fs::Metadata,
+}
+
+impl PathEntry {
+    pub fn is_dir(&self) -> bool {
+        self.metadata.is_dir()
+    }
+
+    pub fn is_file(&self) -> bool {
+        self.metadata.is_file()
+    }
+}
 
 /// Lists the immediate children of a directory.
 pub fn ls(path: impl AsRef<Path>) -> Result<Shell<PathBuf>> {
@@ -14,6 +34,20 @@ pub fn ls(path: impl AsRef<Path>) -> Result<Shell<PathBuf>> {
     for entry in fs::read_dir(path)? {
         let entry = entry?;
         entries.push(entry.path());
+    }
+    Ok(Shell::from_iter(entries))
+}
+
+/// Lists the immediate children of a directory, including metadata.
+pub fn ls_detailed(path: impl AsRef<Path>) -> Result<Shell<PathEntry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        entries.push(PathEntry {
+            path: entry.path(),
+            metadata,
+        });
     }
     Ok(Shell::from_iter(entries))
 }
@@ -26,6 +60,29 @@ pub fn walk(root: impl AsRef<Path>) -> Result<Shell<PathBuf>> {
     while let Some(path) = stack.pop() {
         acc.push(path.clone());
         if path.is_dir() {
+            for entry in fs::read_dir(&path)? {
+                let entry = entry?;
+                stack.push(entry.path());
+            }
+        }
+    }
+
+    Ok(Shell::from_iter(acc))
+}
+
+/// Recursively walks the directory tree, including metadata for each entry.
+pub fn walk_detailed(root: impl AsRef<Path>) -> Result<Shell<PathEntry>> {
+    let mut stack = vec![root.as_ref().to_path_buf()];
+    let mut acc = Vec::new();
+
+    while let Some(path) = stack.pop() {
+        let metadata = fs::metadata(&path)?;
+        let is_dir = metadata.is_dir();
+        acc.push(PathEntry {
+            path: path.clone(),
+            metadata,
+        });
+        if is_dir {
             for entry in fs::read_dir(&path)? {
                 let entry = entry?;
                 stack.push(entry.path());
@@ -129,6 +186,35 @@ pub fn glob(pattern: impl AsRef<str>) -> Result<Shell<PathBuf>> {
     Ok(Shell::from_iter(matches))
 }
 
+/// Creates a uniquely named temporary file and returns its path.
+pub fn temp_file(prefix: impl AsRef<str>) -> Result<PathBuf> {
+    let prefix = prefix.as_ref();
+    let base = env::temp_dir();
+    let pid = process::id();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    for attempt in 0..100 {
+        let candidate =
+            base.join(format!("{prefix}-{pid}-{now}-{attempt}.tmp"));
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(_) => return Ok(candidate),
+            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "failed to allocate temporary file",
+    )
+    .into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +263,26 @@ mod tests {
         assert!(!orphan.exists());
         rm(&nested)?;
         assert!(!nested.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn temp_and_detailed_listing() -> crate::Result<()> {
+        let temp = temp_file("crab")?;
+        append_text(&temp, "hello")?;
+        assert!(temp.exists());
+        rm(&temp)?;
+        assert!(!temp.exists());
+
+        let dir = tempdir()?;
+        let file = dir.path().join("entry.txt");
+        write_text(&file, "data")?;
+
+        let detailed: Vec<_> = ls_detailed(dir.path())?.collect();
+        assert!(detailed.iter().any(|entry| entry.path == file));
+
+        let walk_entries: Vec<_> = walk_detailed(dir.path())?.collect();
+        assert!(walk_entries.iter().any(|entry| entry.path == file));
         Ok(())
     }
 }

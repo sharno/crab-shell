@@ -8,15 +8,18 @@
 mod command;
 mod error;
 mod fs;
+mod env;
 mod shell;
 
 pub mod prelude;
 
-pub use command::{cmd, sh, Command, CommandOutput};
+pub use command::{cmd, sh, Command, CommandOutput, Pipeline};
 pub use error::{Error, Result};
+pub use env::*;
 pub use fs::{
-    append_text, cat, copy_file, glob, ls, mkdir_all, read_lines, read_text, rm,
-    walk, write_lines, write_text,
+    append_text, cat, copy_file, glob, ls, ls_detailed, mkdir_all, read_lines,
+    read_text, rm, temp_file, walk, walk_detailed, write_lines, write_text,
+    PathEntry,
 };
 pub use shell::Shell;
 

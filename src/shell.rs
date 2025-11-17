@@ -171,6 +171,38 @@ impl<T> Shell<T> {
         self.into_iter().collect()
     }
 
+    /// Collects into any container implementing [`FromIterator`].
+    pub fn collect_into<C>(self) -> C
+    where
+        C: FromIterator<T>,
+    {
+        self.into_iter().collect()
+    }
+
+    /// Groups elements into chunks of the provided size.
+    pub fn chunks(self, size: usize) -> Shell<Vec<T>>
+    where
+        T: 'static,
+    {
+        assert!(size > 0, "chunk size must be greater than zero");
+        let iter = self.into_boxed();
+        Shell::new(ChunkIter::new(iter, size))
+    }
+
+    /// Zips two streams together.
+    pub fn zip<U, I>(self, other: I) -> Shell<(T, U)>
+    where
+        I: IntoIterator<Item = U>,
+        I::IntoIter: Iterator<Item = U> + 'static,
+        T: 'static,
+        U: 'static,
+    {
+        let iter = self.into_boxed();
+        let other_iter: Box<dyn Iterator<Item = U> + 'static> =
+            Box::new(other.into_iter());
+        Shell::new(iter.zip(other_iter))
+    }
+
     /// Joins elements into a string separated by `sep`.
     pub fn join(self, sep: &str) -> String
     where
@@ -229,6 +261,37 @@ where
     }
 }
 
+struct ChunkIter<T> {
+    iter: Box<dyn Iterator<Item = T> + 'static>,
+    size: usize,
+}
+
+impl<T> ChunkIter<T> {
+    fn new(iter: Box<dyn Iterator<Item = T> + 'static>, size: usize) -> Self {
+        Self { iter, size }
+    }
+}
+
+impl<T> Iterator for ChunkIter<T> {
+    type Item = Vec<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chunk = Vec::with_capacity(self.size);
+        for _ in 0..self.size {
+            if let Some(item) = self.iter.next() {
+                chunk.push(item);
+            } else {
+                break;
+            }
+        }
+        if chunk.is_empty() {
+            None
+        } else {
+            Some(chunk)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Shell;
@@ -248,5 +311,23 @@ mod tests {
         assert_eq!(joined, "a,b,c");
         let sum = Shell::from_iter([1, 2, 3]).fold(0, |acc, n| acc + n);
         assert_eq!(sum, 6);
+    }
+
+    #[test]
+    fn chunk_and_zip() {
+        let chunked: Vec<Vec<_>> = Shell::from_iter(1..=5).chunks(2).collect();
+        assert_eq!(chunked, vec![vec![1, 2], vec![3, 4], vec![5]]);
+
+        let zipped: Vec<_> =
+            Shell::from_iter(["a".to_string(), "b".to_string()])
+                .zip(["x", "y"])
+                .collect();
+        assert_eq!(
+            zipped,
+            vec![
+                ("a".to_string(), "x"),
+                ("b".to_string(), "y"),
+            ]
+        );
     }
 }
