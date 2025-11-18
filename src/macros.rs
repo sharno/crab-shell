@@ -11,6 +11,18 @@ macro_rules! qshr {
     }};
 }
 
+/// Macro to build a [`Command`](crate::Command) in place.
+#[macro_export]
+macro_rules! cmd {
+    ($program:expr $(, $arg:expr )* $(,)?) => {{
+        let mut __cmd = $crate::Command::new($program);
+        $(
+            __cmd = __cmd.arg($arg);
+        )*
+        __cmd
+    }};
+}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __qshr_build_pipeline {
@@ -191,7 +203,7 @@ fn is_ident_continue(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{interpolate_command, with_dir};
+    use super::{interpolate_command, literal_command, with_dir};
     use crate::{remove_var, set_var};
     use std::env;
 
@@ -213,6 +225,13 @@ mod tests {
             Ok(())
         })?;
         assert_eq!(env::current_dir()?, original);
+        Ok(())
+    }
+
+    #[test]
+    fn literal_command_executes() -> crate::Result<()> {
+        let output = literal_command("echo literal-test").read()?;
+        assert!(output.contains("literal-test"));
         Ok(())
     }
 }

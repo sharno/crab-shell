@@ -8,7 +8,6 @@
 ### Command/Pipeline API
 
 - Break compatibility to rename `Command::read`/`Pipeline::read` to clearer names (`stdout_text` or similar) and have `run` return `ExitStatus` for better inspection.
-- Provide a `cmd!` macro for literal commands that builds `Command` instances with less boilerplate.
 
 ### Shell Core Improvements
 

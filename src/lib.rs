@@ -107,4 +107,11 @@ mod tests {
         assert_eq!(hits.lock().unwrap().len(), 2);
         Ok(())
     }
+
+    #[test]
+    fn cmd_macro_builds_command() -> Result<()> {
+        let output = cmd!("sh", "-c", "echo cmd-macro").read()?;
+        assert!(output.contains("cmd-macro"));
+        Ok(())
+    }
 }

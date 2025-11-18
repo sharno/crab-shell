@@ -87,6 +87,22 @@ fn main() -> qshr::Result<()> {
 
 String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`, run blocks inside a different directory via `cd("path") { ... }`, and fire blocks in parallel threads with `parallel { ... } { ... };`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
 
+### 5. Build commands with `cmd!`
+
+```rust
+use qshr::{cmd, cmd as cmd_fn};
+
+fn main() -> qshr::Result<()> {
+    let output = cmd!("git", "status", "--short").read()?;
+    println!("{output}");
+
+    // Equivalent builder-style version.
+    let fallback = cmd_fn("git").arg("status").arg("--short").read()?;
+    assert_eq!(output, fallback);
+    Ok(())
+}
+```
+
 #### Macro Patterns
 
 ```rust
