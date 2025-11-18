@@ -163,9 +163,56 @@ fn main() -> qshr::Result<()> {
 
 ## Usage patterns
 
-- **Pipelines**: `sh("ls").pipe(sh("wc -l")).stdout_text()?` or `cmd!("git", "status").pipe(sh("rg todo")).lines()?;`
-- **Parallel work**: `Shell::from_iter(items).chunks(32).chunk_map_parallel(...);` or `qshr! { parallel { "cargo fmt"; } { "cargo clippy"; }; }`
-- **Watch/trigger**: `watch_filtered(".", Duration::from_millis(300), "**/*.rs")?` feeds into `qshr!` flows; see `examples/watch_trigger.rs` and `examples/macro_watch.rs`.
+### Pipelines with fallbacks
+
+```rust
+use qshr::prelude::*;
+
+fn main() -> qshr::Result<()> {
+    let rustc = cmd!("rustc", "--version").stdout_text()?;
+    println!("rust -> {rustc}");
+
+    // Pipe shell commands and capture the output.
+    let files = sh("ls src").pipe(sh("wc -l")).stdout_text()?;
+    println!("src has {files} entries");
+
+    Ok(())
+}
+```
+
+### Parallel chunk processing
+
+```rust
+use qshr::prelude::*;
+
+fn main() -> qshr::Result<()> {
+    let doubled: Vec<_> = Shell::from_iter(0..100)
+        .chunks(16)
+        .chunk_map_parallel(16, |chunk| chunk.into_iter().map(|n| n * 2).collect())
+        .to_vec();
+    println!("doubled len {}", doubled.len());
+    Ok(())
+}
+```
+
+### Watch and trigger work
+
+See `examples/macro_watch.rs` for a `qshr!`-driven watcher; the core pattern is:
+
+```rust
+use qshr::prelude::*;
+use std::time::Duration;
+
+fn main() -> qshr::Result<()> {
+    let events = watch_filtered(".", Duration::from_millis(300), "**/*.rs")?;
+    for event in events.take(3) {
+        let event = event?;
+        println!("changed -> {}", event.path().display());
+        sh("cargo check").run()?;
+    }
+    Ok(())
+}
+```
 
 ## Features
 
