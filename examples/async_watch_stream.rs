@@ -1,11 +1,11 @@
 #[cfg(feature = "async")]
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 #[cfg(feature = "async")]
 use tokio_stream::StreamExt;
 
 #[cfg(feature = "async")]
 #[tokio::main]
-async fn main() -> crab_shell::Result<()> {
+async fn main() -> qshr::Result<()> {
     let dir = tempfile::tempdir()?;
     let root = dir.path().to_path_buf();
     let file = root.join("stream-watch.txt");
@@ -20,7 +20,7 @@ async fn main() -> crab_shell::Result<()> {
 }
 
 #[cfg(not(feature = "async"))]
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     println!("Enable the `async` feature to run this example.");
     Ok(())
 }

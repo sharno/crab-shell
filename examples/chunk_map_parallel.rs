@@ -1,7 +1,7 @@
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     #[cfg(feature = "parallel")]
     {
-        use crab_shell::prelude::*;
+        use qshr::prelude::*;
         let results: Vec<_> = Shell::from_iter(0..10)
             .chunk_map_parallel(3, |chunk| {
                 chunk.into_iter().map(|n| n * n).collect()

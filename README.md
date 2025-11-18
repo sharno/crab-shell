@@ -1,7 +1,7 @@
-# Crab Shell
+# Qshr (صدف)
 
-Crab Shell is a small Turtle-inspired toolkit for writing shell-style scripts in
-Rust. A single `use crab_shell::prelude::*;` gives you:
+Qshr is a small Turtle-inspired toolkit for writing shell-style scripts in
+Rust. A single `use qshr::prelude::*;` gives you:
 
 - `Shell<T>`: a lazy iterator with handy combinators (`map`, `chunks`, `join`, ...).
 - `Command`/`Pipeline`: an ergonomic wrapper around `std::process::Command`.
@@ -10,10 +10,11 @@ Rust. A single `use crab_shell::prelude::*;` gives you:
 ## Quick Examples
 
 ### 1. Stream a command
-```rust
-use crab_shell::prelude::*;
 
-fn main() -> crab_shell::Result<()> {
+```rust
+use qshr::prelude::*;
+
+fn main() -> qshr::Result<()> {
     sh("echo hello && echo world")
         .stream_lines()?
         .for_each(|line| println!("stdout: {}", line?));
@@ -22,10 +23,11 @@ fn main() -> crab_shell::Result<()> {
 ```
 
 ### 2. Walk and filter files
-```rust
-use crab_shell::prelude::*;
 
-fn main() -> crab_shell::Result<()> {
+```rust
+use qshr::prelude::*;
+
+fn main() -> qshr::Result<()> {
     let rust_sources = filter_extension(glob_entries("src/**/*.rs")?, "rs");
     for entry in rust_sources.take(3) {
         println!("{}", entry.path.display());
@@ -35,11 +37,12 @@ fn main() -> crab_shell::Result<()> {
 ```
 
 ### 3. Rebuild when files change
+
 ```rust
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 use std::time::Duration;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     let events = watch_filtered(
         ".",
         Duration::from_secs(1),

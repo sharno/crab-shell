@@ -1,6 +1,6 @@
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     let pipeline = sh("echo one && echo two").pipe(sh("more"));
 
     println!("Streaming stdout from pipeline:");
