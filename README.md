@@ -161,6 +161,12 @@ fn main() -> qshr::Result<()> {
 }
 ```
 
+## Usage patterns
+
+- **Pipelines**: `sh("ls").pipe(sh("wc -l")).stdout_text()?` or `cmd!("git", "status").pipe(sh("rg todo")).lines()?;`
+- **Parallel work**: `Shell::from_iter(items).chunks(32).chunk_map_parallel(...);` or `qshr! { parallel { "cargo fmt"; } { "cargo clippy"; }; }`
+- **Watch/trigger**: `watch_filtered(".", Duration::from_millis(300), "**/*.rs")?` feeds into `qshr!` flows; see `examples/watch_trigger.rs` and `examples/macro_watch.rs`.
+
 ## Features
 
 - `parallel`: enables `Shell::chunk_map_parallel` via `rayon`.
