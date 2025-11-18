@@ -7,7 +7,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process,
+    process, thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -308,6 +308,35 @@ impl Watcher {
     pub fn into_shell(self) -> Shell<Result<WatchEvent>> {
         Shell::new(WatcherIter::new(self._inner, self.rx))
     }
+
+    /// Converts this watcher into a channel, allowing manual polling (`try_recv`).
+    pub fn into_receiver(self) -> std::sync::mpsc::Receiver<Result<WatchEvent>> {
+        let Watcher { _inner, rx } = self;
+        let (tx, rx_out) = mpsc::channel();
+        thread::spawn(move || {
+            let _keep_alive = _inner;
+            while let Ok(event) = rx.recv() {
+                match event {
+                    Ok(event) => {
+                        let converted = convert_event(event);
+                        if converted.is_empty() {
+                            continue;
+                        }
+                        for item in converted {
+                            if tx.send(Ok(item)).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        let _ = tx.send(Err(err.into()));
+                        return;
+                    }
+                }
+            }
+        });
+        rx_out
+    }
 }
 
 struct WatcherIter {
@@ -355,6 +384,13 @@ impl Iterator for WatcherIter {
 /// Creates a lazy stream of filesystem changes under `root`.
 pub fn watch(root: impl AsRef<Path>) -> Result<Shell<Result<WatchEvent>>> {
     Ok(Watcher::new(root)?.into_shell())
+}
+
+/// Returns a channel that yields filesystem events without blocking iteration.
+pub fn watch_channel(
+    root: impl AsRef<Path>,
+) -> Result<std::sync::mpsc::Receiver<Result<WatchEvent>>> {
+    Ok(Watcher::new(root)?.into_receiver())
 }
 
 /// Filters watch events by glob pattern (case-sensitive).
@@ -936,6 +972,19 @@ mod tests {
             _ => false,
         })?;
         assert!(matches!(removed, WatchEvent::Removed { path, .. } if path == file));
+        Ok(())
+    }
+
+    #[test]
+    fn watch_channel_receives_events() -> crate::Result<()> {
+        let dir = tempdir()?;
+        let file = dir.path().join("chan.txt");
+        let rx = watch_channel(dir.path())?;
+        write_text(&file, "one")?;
+        let event = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("watch channel timed out")?;
+        assert_eq!(event.path(), file.as_path());
         Ok(())
     }
 

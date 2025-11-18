@@ -212,6 +212,12 @@ fn main() -> qshr::Result<()> {
     }
     Ok(())
 }
+
+// Prefer a channel for manual polling:
+let rx = watch_channel(".")?;
+if let Ok(event) = rx.try_recv() {
+    println!("changed -> {}", event?.path().display());
+}
 ```
 
 ## Features
