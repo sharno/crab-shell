@@ -167,6 +167,11 @@ impl<T> Shell<T> {
         self.into_iter().collect()
     }
 
+    /// Returns the iterator size hint.
+    pub fn len_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+
     /// Collects into any container implementing [`FromIterator`].
     pub fn collect_into<C>(self) -> C
     where
@@ -506,6 +511,14 @@ impl<T> Iterator for ChunkIter<T> {
 #[cfg(test)]
 mod tests {
     use super::Shell;
+
+    #[test]
+    fn len_hint_tracks_iterator() {
+        let mut shell = Shell::from_iter([1, 2, 3]);
+        assert_eq!(shell.len_hint(), (3, Some(3)));
+        assert_eq!(shell.next(), Some(1));
+        assert_eq!(shell.len_hint(), (2, Some(2)));
+    }
 
     #[test]
     fn filter_map_chain() {

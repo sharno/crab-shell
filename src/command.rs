@@ -13,6 +13,10 @@ use std::{
 #[cfg(feature = "async")]
 use tokio::{io::AsyncWriteExt, process::Command as TokioCommand, task};
 
+/// Alias to make builder intentions clearer in docs (`CommandBuilder` == [`Command`]).
+#[allow(dead_code)]
+pub type CommandBuilder = Command;
+
 /// Builder that mirrors `std::process::Command` but surfaces a friendlier API
 /// tailored for composing pipelines.
 #[derive(Debug, Clone)]
