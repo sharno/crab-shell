@@ -13,6 +13,12 @@ pub struct Shell<T> {
     iter: Box<dyn Iterator<Item = T> + 'static>,
 }
 
+/// Iterator wrapper that supports [`DoubleEndedIterator`].
+#[allow(dead_code)]
+pub struct DoubleEndedShell<T> {
+    iter: Box<dyn DoubleEndedIterator<Item = T> + 'static>,
+}
+
 impl<T> Shell<T> {
     /// Wraps an arbitrary iterator.
     pub fn new<I>(iter: I) -> Self
@@ -334,11 +340,48 @@ impl<T> Shell<T> {
     }
 }
 
+#[allow(dead_code)]
+impl<T: 'static> DoubleEndedShell<T> {
+    /// Wraps any double-ended iterator.
+    pub fn new<I>(iter: I) -> Self
+    where
+        I: DoubleEndedIterator<Item = T> + 'static,
+    {
+        Self {
+            iter: Box::new(iter),
+        }
+    }
+
+    /// Converts a `Vec<T>` into a double-ended shell.
+    pub fn from_vec(vec: Vec<T>) -> Self {
+        Self::new(vec.into_iter())
+    }
+
+    /// Converts back to a plain [`Shell`], dropping double-ended support.
+    pub fn into_shell(self) -> Shell<T> {
+        Shell::new(self.iter)
+    }
+}
+
 impl<T> Iterator for Shell<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
+    }
+}
+
+impl<T> Iterator for DoubleEndedShell<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
+impl<T> DoubleEndedIterator for DoubleEndedShell<T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back()
     }
 }
 
@@ -514,7 +557,7 @@ impl<T> std::iter::FusedIterator for ChunkIter<T> {}
 
 #[cfg(test)]
 mod tests {
-    use super::Shell;
+    use super::{DoubleEndedShell, Shell};
 
     #[test]
     fn len_hint_tracks_iterator() {
@@ -594,6 +637,14 @@ mod tests {
             .chunk_map_parallel(2, |chunk| chunk.into_iter().map(|n| n * 2).collect())
             .collect();
         assert_eq!(values, vec![0, 2, 4, 6, 8, 10]);
+    }
+
+    #[test]
+    fn double_ended_shell_pops_back() {
+        let mut shell = DoubleEndedShell::from_vec(vec![1, 2, 3]);
+        assert_eq!(shell.next(), Some(1));
+        assert_eq!(shell.next_back(), Some(3));
+        assert_eq!(shell.into_shell().to_vec(), vec![2]);
     }
 }
 struct DistinctIter<T> {
