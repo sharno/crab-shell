@@ -2,6 +2,13 @@
 name = "crab-shell"
 version = "0.1.0"
 edition = "2024"
+description = "Turtle-inspired shell scripting helpers for Rust"
+license = "MIT"
+repository = "https://github.com/sharno/crab-shell"
+readme = "README.md"
+keywords = ["shell", "command", "pipeline", "watch", "turtle"]
+categories = ["command-line-utilities"]
+exclude = ["turtle/**"]
 
 [features]
 parallel = ["rayon"]
