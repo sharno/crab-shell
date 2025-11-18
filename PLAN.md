@@ -1,14 +1,8 @@
 ## Qshr Improvement Plan
 
-### Filesystem & Streaming
-
-- Rework `read_lines`/`cat` to stream via iterator adapters instead of buffering entire files, keeping memory flat for large inputs.
-
 ### Shell Core Improvements
 
 - Implement iterator traits (`ExactSizeIterator`, `DoubleEndedIterator`) where applicable so adapters compose better.
-- Optimize `chunk_map` to avoid collecting entire datasets when `chunk_size` is large, possibly by using a streaming buffer.
-
 ### Docs & Examples
 
 - Expand macro documentation with real-world workflows (`examples/macro_workflow.rs`, potential `macro_watch.rs`).

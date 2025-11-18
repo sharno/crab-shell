@@ -2,6 +2,7 @@ use std::{
     collections::{HashSet, VecDeque},
     iter,
     sync::Arc,
+    vec::IntoIter,
 };
 
 /// A lazy, composable stream of values inspired by Turtle's `Shell`.
@@ -614,7 +615,7 @@ where
     iter: Box<dyn Iterator<Item = T> + 'static>,
     size: usize,
     mapper: F,
-    buffer: Vec<U>,
+    current: Option<IntoIter<U>>,
 }
 
 impl<T, U, F> ChunkMapIter<T, U, F>
@@ -626,7 +627,7 @@ where
             iter,
             size,
             mapper,
-            buffer: Vec::new(),
+            current: None,
         }
     }
 }
@@ -638,8 +639,11 @@ where
     type Item = U;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(item) = self.buffer.pop() {
-            return Some(item);
+        if let Some(current) = &mut self.current {
+            if let Some(item) = current.next() {
+                return Some(item);
+            }
+            self.current = None;
         }
         let mut chunk = Vec::with_capacity(self.size);
         for _ in 0..self.size {
@@ -652,9 +656,13 @@ where
         if chunk.is_empty() {
             return None;
         }
-        let mut mapped = (self.mapper)(chunk);
-        mapped.reverse();
-        self.buffer = mapped;
-        self.buffer.pop()
+        let mut mapped = (self.mapper)(chunk).into_iter();
+        match mapped.next() {
+            Some(item) => {
+                self.current = Some(mapped);
+                Some(item)
+            }
+            None => self.next(),
+        }
     }
 }
