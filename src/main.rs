@@ -1,6 +1,6 @@
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     println!("Listing current directory:");
     for path in ls(".")?.take(5) {
         println!(" - {}", path.display());
@@ -10,8 +10,8 @@ fn main() -> crab_shell::Result<()> {
         println!("Home dir -> {}", home.display());
     }
 
-    let pipeline = sh("echo hello from crab-shell").pipe(sh("more"));
-    let tee_path = temp_file("crab-pipeline")?;
+    let pipeline = sh("echo hello from qshr").pipe(sh("more"));
+    let tee_path = temp_file("qshr-pipeline")?;
     let pipeline_output = pipeline.tee(&tee_path)?;
     println!(
         "Pipeline said: {}",
@@ -19,7 +19,7 @@ fn main() -> crab_shell::Result<()> {
     );
     rm(&tee_path)?;
 
-    let temp = temp_file("crab-demo")?;
+    let temp = temp_file("qshr-demo")?;
     write_text(&temp, "temporary scratch data")?;
     println!("Temp file created at {}", temp.display());
     rm(&temp)?;
@@ -31,7 +31,7 @@ fn main() -> crab_shell::Result<()> {
     }
 
     if !files.is_empty() {
-        let mirror = temp_file("crab-copy")?;
+        let mirror = temp_file("qshr-copy")?;
         let mirror_dir = mirror.with_extension("dir");
         mkdir_all(&mirror_dir)?;
         copy_entries(

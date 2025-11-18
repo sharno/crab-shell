@@ -21,17 +21,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "crab-shell"
-version = "0.1.0"
-dependencies = [
- "glob",
- "rayon",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
 name = "crossbeam-deque"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -144,6 +133,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "qshr"
+version = "0.1.0"
+dependencies = [
+ "glob",
+ "rayon",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

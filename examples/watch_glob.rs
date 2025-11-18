@@ -1,7 +1,7 @@
-use crab_shell::{prelude::*, watch_glob};
+use qshr::{prelude::*, watch_glob};
 use std::time::Duration;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     let dir = tempfile::tempdir()?;
     let root = dir.path().to_path_buf();
     let file = root.join("match.rs");

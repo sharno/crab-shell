@@ -1,6 +1,6 @@
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     let pattern = "src/**/*.rs";
     let entries = glob_entries(pattern)?;
 

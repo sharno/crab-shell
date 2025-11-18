@@ -12,7 +12,7 @@ use glob::{GlobError, PatternError};
 /// Result type used throughout the crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Errors surfaced by Crab Shell operations.
+/// Errors surfaced by Qshr operations.
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),

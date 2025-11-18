@@ -1,4 +1,4 @@
-//! Crab Shell - a Turtle-inspired ergonomic shell toolkit for Rust.
+//! Qshr - a Turtle-inspired ergonomic shell toolkit for Rust.
 //!
 //! The crate pairs a lazy [`Shell`] iterator abstraction with a small command
 //! runner that provides composable pipelines reminiscent of the Haskell Turtle
@@ -31,9 +31,9 @@ pub use shell::Shell;
 /// Convenience module with the most frequently used items.
 ///
 /// ```no_run
-/// use crab_shell::prelude::*;
+/// use qshr::prelude::*;
 ///
-/// fn main() -> crab_shell::Result<()> {
+/// fn main() -> qshr::Result<()> {
 ///     for path in ls(".")? {
 ///         println!("{}", path.display());
 ///     }

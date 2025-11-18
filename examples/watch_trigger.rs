@@ -1,7 +1,7 @@
-use crab_shell::prelude::*;
+use qshr::prelude::*;
 use std::time::Duration;
 
-fn main() -> crab_shell::Result<()> {
+fn main() -> qshr::Result<()> {
     let dir = tempfile::tempdir()?;
     let file = dir.path().join("trigger.txt");
 
