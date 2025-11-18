@@ -1,5 +1,4 @@
 use qshr::prelude::*;
-use std::time::Duration;
 
 fn main() -> qshr::Result<()> {
     println!("== checking versions ==");
@@ -7,8 +6,8 @@ fn main() -> qshr::Result<()> {
     println!("rustc: {}", rustc.trim());
 
     println!("== listing *.rs in src ==");
-    for entry in watch_glob(watch("src", Duration::from_millis(0), 1)?, "src/*.rs")? {
-        println!("- {}", entry.path().display());
+    for entry in glob_entries("src/*.rs")? {
+        println!("- {}", entry.path.display());
     }
 
     println!("== piping command ==");

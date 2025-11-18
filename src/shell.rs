@@ -211,8 +211,7 @@ impl<T> Shell<T> {
         T: 'static,
     {
         let iter_a = self.into_boxed();
-        let iter_b: Box<dyn Iterator<Item = T> + 'static> =
-            Box::new(other.into_iter());
+        let iter_b: Box<dyn Iterator<Item = T> + 'static> = Box::new(other.into_iter());
         Shell::new(InterleaveIter::new(iter_a, iter_b))
     }
 
@@ -226,9 +225,7 @@ impl<T> Shell<T> {
     {
         let iter = self.into_boxed();
         let others = Arc::new(other.into_iter().collect::<Vec<U>>());
-        Shell::new(iter.flat_map(move |item| {
-            ProductIter::new(item, Arc::clone(&others))
-        }))
+        Shell::new(iter.flat_map(move |item| ProductIter::new(item, Arc::clone(&others))))
     }
 
     /// Zips two streams together.
@@ -240,8 +237,7 @@ impl<T> Shell<T> {
         U: 'static,
     {
         let iter = self.into_boxed();
-        let other_iter: Box<dyn Iterator<Item = U> + 'static> =
-            Box::new(other.into_iter());
+        let other_iter: Box<dyn Iterator<Item = U> + 'static> = Box::new(other.into_iter());
         Shell::new(iter.zip(other_iter))
     }
 
@@ -332,10 +328,7 @@ impl<T> Shell<T> {
             .chunks(chunk_size)
             .map(|chunk| chunk.to_vec())
             .collect();
-        let results: Vec<U> = chunks
-            .into_par_iter()
-            .flat_map(|chunk| f(chunk))
-            .collect();
+        let results: Vec<U> = chunks.into_par_iter().flat_map(|chunk| f(chunk)).collect();
         Shell::new(results.into_iter())
     }
 
@@ -509,11 +502,7 @@ impl<T> Iterator for ChunkIter<T> {
                 break;
             }
         }
-        if chunk.is_empty() {
-            None
-        } else {
-            Some(chunk)
-        }
+        if chunk.is_empty() { None } else { Some(chunk) }
     }
 }
 
@@ -543,51 +532,36 @@ mod tests {
         let chunked: Vec<Vec<_>> = Shell::from_iter(1..=5).chunks(2).collect();
         assert_eq!(chunked, vec![vec![1, 2], vec![3, 4], vec![5]]);
 
-        let zipped: Vec<_> =
-            Shell::from_iter(["a".to_string(), "b".to_string()])
-                .zip(["x", "y"])
-                .collect();
+        let zipped: Vec<_> = Shell::from_iter(["a".to_string(), "b".to_string()])
+            .zip(["x", "y"])
+            .collect();
         assert_eq!(
             zipped,
-            vec![
-                ("a".to_string(), "x"),
-                ("b".to_string(), "y"),
-            ]
+            vec![("a".to_string(), "x"), ("b".to_string(), "y"),]
         );
     }
 
     #[test]
     fn windows_interleave_product() {
-        let windows: Vec<_> =
-            Shell::from_iter([1, 2, 3, 4]).windows(3).collect();
+        let windows: Vec<_> = Shell::from_iter([1, 2, 3, 4]).windows(3).collect();
         assert_eq!(windows, vec![vec![1, 2, 3], vec![2, 3, 4]]);
 
-        let interleaved: Vec<_> =
-            Shell::from_iter([1, 3, 5]).interleave([2, 4, 6]).collect();
+        let interleaved: Vec<_> = Shell::from_iter([1, 3, 5]).interleave([2, 4, 6]).collect();
         assert_eq!(interleaved, vec![1, 2, 3, 4, 5, 6]);
 
-        let product: Vec<_> = Shell::from_iter(["a", "b"])
-            .product(["x", "y"])
-            .collect();
+        let product: Vec<_> = Shell::from_iter(["a", "b"]).product(["x", "y"]).collect();
         assert_eq!(
             product,
-            vec![
-                ("a", "x"),
-                ("a", "y"),
-                ("b", "x"),
-                ("b", "y"),
-            ]
+            vec![("a", "x"), ("a", "y"), ("b", "x"), ("b", "y"),]
         );
     }
 
     #[test]
     fn distinct_and_sorted() {
-        let distinct: Vec<_> =
-            Shell::from_iter([1, 2, 2, 3, 1]).distinct().collect();
+        let distinct: Vec<_> = Shell::from_iter([1, 2, 2, 3, 1]).distinct().collect();
         assert_eq!(distinct, vec![1, 2, 3]);
 
-        let sorted: Vec<_> =
-            Shell::from_iter([3, 1, 2]).sorted().collect();
+        let sorted: Vec<_> = Shell::from_iter([3, 1, 2]).sorted().collect();
         assert_eq!(sorted, vec![1, 2, 3]);
     }
 
@@ -654,11 +628,7 @@ impl<T, U, F> ChunkMapIter<T, U, F>
 where
     F: FnMut(Vec<T>) -> Vec<U>,
 {
-    fn new(
-        iter: Box<dyn Iterator<Item = T> + 'static>,
-        size: usize,
-        mapper: F,
-    ) -> Self {
+    fn new(iter: Box<dyn Iterator<Item = T> + 'static>, size: usize, mapper: F) -> Self {
         Self {
             iter,
             size,
