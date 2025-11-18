@@ -1,10 +1,5 @@
 ## Qshr Improvement Plan
 
-### Macro Ergonomics
-
-- Allow `$var` interpolation inside string commands so values can be passed without `format!`.
-- Introduce control blocks such as `cd "path" { ... }` and `parallel { ... }` that expand to existing helpers but read like shell constructs.
-
 ### Filesystem & Streaming
 
 - Ensure all filesystem helpers return `Shell<Result<_>>` lazily; remove lingering eager `Vec` collections and document the pattern (`collect::<Result<_>>()?`).

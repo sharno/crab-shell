@@ -23,6 +23,16 @@ fn main() -> qshr::Result<()> {
             println!("{status}");
         };
 
+        cd("src") {
+            "ls";
+        };
+
+        parallel {
+            "echo worker one";
+        } {
+            "echo worker two";
+        };
+
         println!("== top TODO matches ==");
         "rg TODO -n src" | "head -n 5";
         unset "RUST_BACKTRACE";

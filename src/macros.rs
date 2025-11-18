@@ -2,6 +2,7 @@
 #[macro_export]
 macro_rules! qshr {
     ($($body:tt)*) => {{
+        #[allow(unused_imports)]
         use $crate::prelude::*;
         let __qshr_entry = || -> $crate::Result<()> {
             $crate::__qshr_execute! { $($body)* }
@@ -28,6 +29,20 @@ macro_rules! __qshr_execute {
     () => {
         Ok(())
     };
+    (cd($path:expr) { $($block:tt)* } ; $($rest:tt)*) => {{
+        $crate::macros::with_dir($path, || $crate::__qshr_execute! { $($block)* })?;
+        $crate::__qshr_execute! { $($rest)* }
+    }};
+    (cd($path:expr) { $($block:tt)* }) => {{
+        $crate::macros::with_dir($path, || $crate::__qshr_execute! { $($block)* })
+    }};
+    (parallel { $($block:tt)* } $({ $($more:tt)* })+ ; $($rest:tt)*) => {{
+        $crate::__qshr_parallel_blocks!({ $($block)* } $({ $($more)* })+)?;
+        $crate::__qshr_execute! { $($rest)* }
+    }};
+    (parallel { $($block:tt)* } $({ $($more:tt)* })+) => {{
+        $crate::__qshr_parallel_blocks!({ $($block)* } $({ $($more)* })+)
+    }};
     (env $key:literal = $value:expr ; $($rest:tt)*) => {{
         $crate::set_var($key, $value);
         $crate::__qshr_execute! { $($rest)* }
@@ -70,6 +85,29 @@ macro_rules! __qshr_execute {
     }};
     ($expr:expr) => {{
         $expr
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __qshr_parallel_blocks {
+    ({ $($block:tt)* } $({ $($rest:tt)* })+ ) => {{
+        let mut handles: ::std::vec::Vec<::std::thread::JoinHandle<$crate::Result<()>>> = ::std::vec::Vec::new();
+        $crate::__qshr_spawn_parallel!(handles, { $($block)* } $({ $($rest)* })+);
+        for handle in handles {
+            handle.join().expect("parallel block panicked")?;
+        }
+        Ok::<(), $crate::Error>(())
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __qshr_spawn_parallel {
+    ($handles:ident, ) => {};
+    ($handles:ident, { $($block:tt)* } $($rest:tt)*) => {{
+        $handles.push(::std::thread::spawn(move || $crate::__qshr_execute! { $($block)* }));
+        $crate::__qshr_spawn_parallel!($handles, $($rest)*);
     }};
 }
 
@@ -124,6 +162,18 @@ pub fn literal_command(template: &str) -> crate::Command {
     crate::sh(interpolate_command(template))
 }
 
+pub fn with_dir(
+    path: impl AsRef<std::path::Path>,
+    f: impl FnOnce() -> crate::Result<()>,
+) -> crate::Result<()> {
+    use std::env;
+    let original = env::current_dir()?;
+    env::set_current_dir(path)?;
+    let result = f();
+    env::set_current_dir(original)?;
+    result
+}
+
 fn resolve_var(name: &str) -> String {
     match crate::var(name) {
         Some(val) => val.to_string_lossy().into_owned(),
@@ -141,8 +191,9 @@ fn is_ident_continue(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::interpolate_command;
+    use super::{interpolate_command, with_dir};
     use crate::{remove_var, set_var};
+    use std::env;
 
     #[test]
     fn interpolates_env_vars() {
@@ -150,5 +201,18 @@ mod tests {
         let interpolated = interpolate_command("echo $QSHR_MACRO_TEST ${QSHR_MACRO_TEST} $$");
         assert_eq!(interpolated, "echo value value $");
         remove_var("QSHR_MACRO_TEST");
+    }
+
+    #[test]
+    fn with_dir_restores() -> crate::Result<()> {
+        let original = env::current_dir()?;
+        let temp = tempfile::tempdir()?;
+        with_dir(temp.path(), || {
+            let now = env::current_dir()?;
+            assert_eq!(now, temp.path());
+            Ok(())
+        })?;
+        assert_eq!(env::current_dir()?, original);
+        Ok(())
     }
 }

@@ -70,12 +70,22 @@ fn main() -> qshr::Result<()> {
         println!("rustc -> {}", rustc.trim());
 
         "echo listing src" | "more";
+        cd("src") {
+            "ls";
+        };
+
+        parallel {
+            "echo one";
+        } {
+            "echo two";
+        };
+
         unset "RUST_BACKTRACE";
     }
 }
 ```
 
-String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
+String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`, run blocks inside a different directory via `cd("path") { ... }`, and fire blocks in parallel threads with `parallel { ... } { ... };`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
 
 #### Macro Patterns
 

@@ -77,4 +77,34 @@ mod tests {
         }?;
         Ok(())
     }
+
+    #[test]
+    #[allow(redundant_semicolons)]
+    fn macro_cd_and_parallel() -> Result<()> {
+        use std::sync::{Arc, Mutex};
+        let temp = tempfile::tempdir()?;
+        let original = std::env::current_dir()?;
+        qshr! {
+            cd(temp.path()) {
+                let pwd = std::env::current_dir()?;
+                assert_eq!(pwd, temp.path());
+            }
+        }?;
+        assert_eq!(std::env::current_dir()?, original);
+
+        let hits = Arc::new(Mutex::new(Vec::new()));
+        let hits_a = hits.clone();
+        let hits_b = hits.clone();
+        qshr! {
+            parallel {
+                let mut guard = hits_a.lock().unwrap();
+                guard.push(1);
+            } {
+                let mut guard = hits_b.lock().unwrap();
+                guard.push(2);
+            };
+        }?;
+        assert_eq!(hits.lock().unwrap().len(), 2);
+        Ok(())
+    }
 }
