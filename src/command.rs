@@ -57,11 +57,7 @@ impl Command {
     }
 
     /// Sets/overrides an environment variable.
-    pub fn env(
-        mut self,
-        key: impl Into<OsString>,
-        value: impl Into<OsString>,
-    ) -> Self {
+    pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
         self.env.push((key.into(), value.into()));
         self
     }
@@ -100,8 +96,7 @@ impl Command {
             return Err(Error::Command {
                 program: self.program.clone(),
                 status: std_output.status,
-                stderr: String::from_utf8_lossy(&std_output.stderr)
-                    .to_string(),
+                stderr: String::from_utf8_lossy(&std_output.stderr).to_string(),
             });
         }
         Ok(CommandOutput {
@@ -178,20 +173,18 @@ impl Command {
                 stdin.write_all(input)?;
             }
         }
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+        let stdout = child.stdout.take().ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "missing stdout pipe",
-            )))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+            ))
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "missing stderr pipe",
-            )))?;
+            ))
+        })?;
         let (tx, rx) = mpsc::channel();
         let program = self.program.clone();
         thread::spawn(move || {
@@ -209,9 +202,7 @@ impl Command {
                     match reader.read_line(&mut line) {
                         Ok(0) => break,
                         Ok(_) => {
-                            let send_line =
-                                line.trim_end_matches(&['\r', '\n'][..])
-                                    .to_string();
+                            let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
                             if tx.send(Ok(send_line)).is_err() {
                                 let _ = child.kill();
                                 let _ = child.wait();
@@ -261,10 +252,7 @@ impl Command {
     /// Appends stdout to the specified file.
     pub fn append_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
         let output = self.output()?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(&output.stdout)?;
         Ok(())
     }
@@ -341,20 +329,18 @@ impl Command {
                 stdin.write_all(input)?;
             }
         }
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+        let stdout = child.stdout.take().ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "missing stdout pipe",
-            )))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| Error::Io(std::io::Error::new(
+            ))
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            Error::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "missing stderr pipe",
-            )))?;
+            ))
+        })?;
         let (tx, rx) = mpsc::channel();
         let program = self.program.clone();
         thread::spawn(move || {
@@ -372,8 +358,7 @@ impl Command {
                     match reader.read_line(&mut line) {
                         Ok(0) => break,
                         Ok(_) => {
-                            let send_line =
-                                line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                            let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
                             if tx.send(Ok(send_line)).is_err() {
                                 let _ = child.kill();
                                 let _ = child.wait();
@@ -421,13 +406,13 @@ impl Command {
             let shell = cmd.stream_lines()?;
             Ok::<Vec<Result<String>>, Error>(shell.collect())
         })
-            .await
-            .map_err(|err| {
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("stream task panicked: {err}"),
-                ))
-            })??;
+        .await
+        .map_err(|err| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("stream task panicked: {err}"),
+            ))
+        })??;
         Ok(Shell::from_iter(lines))
     }
 
@@ -582,10 +567,7 @@ impl Pipeline {
     /// Appends the pipeline output to a file.
     pub fn append_stdout(&self, path: impl AsRef<Path>) -> Result<()> {
         let output = self.output()?;
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(path)?;
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
         file.write_all(&output.stdout)?;
         Ok(())
     }
@@ -660,13 +642,13 @@ impl Pipeline {
             let shell = pipe.stream_lines()?;
             Ok::<Vec<Result<String>>, Error>(shell.collect())
         })
-            .await
-            .map_err(|err| {
-                Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("pipeline stream task panicked: {err}"),
-                ))
-            })??;
+        .await
+        .map_err(|err| {
+            Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("pipeline stream task panicked: {err}"),
+            ))
+        })??;
         Ok(Shell::from_iter(lines))
     }
 }
@@ -707,8 +689,10 @@ mod tests {
         let cmd = sh("echo first && echo second");
         let lines: Result<Vec<_>> = cmd.stream_lines()?.collect();
         let lines = lines?;
-        let cleaned: Vec<_> =
-            lines.into_iter().map(|line| line.trim().to_string()).collect();
+        let cleaned: Vec<_> = lines
+            .into_iter()
+            .map(|line| line.trim().to_string())
+            .collect();
         assert_eq!(cleaned, vec!["first".to_string(), "second".to_string()]);
         Ok(())
     }
@@ -718,9 +702,7 @@ mod tests {
         let pipeline = sh("echo foo").pipe(sh("more"));
         let lines: Result<Vec<_>> = pipeline.stream_lines()?.collect();
         let lines = lines?;
-        assert!(lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("foo")));
+        assert!(lines.iter().any(|line| line.to_lowercase().contains("foo")));
         Ok(())
     }
 
@@ -729,9 +711,11 @@ mod tests {
         let cmd = stderr_command();
         let lines: Result<Vec<_>> = cmd.stream_stderr()?.collect();
         let lines = lines?;
-        assert!(lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("warn")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.to_lowercase().contains("warn"))
+        );
         Ok(())
     }
 
@@ -740,9 +724,11 @@ mod tests {
         let pipeline = sh("echo hi").pipe(stderr_command());
         let lines: Result<Vec<_>> = pipeline.stream_stderr()?.collect();
         let lines = lines?;
-        assert!(lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("warn")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.to_lowercase().contains("warn"))
+        );
         Ok(())
     }
 
@@ -764,19 +750,18 @@ mod tests {
     #[tokio::test]
     async fn async_output_executes() -> Result<()> {
         let output = sh("echo async").output_async().await?;
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("async"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("async")
+        );
         Ok(())
     }
 
     #[cfg(feature = "async")]
     #[tokio::test]
     async fn async_stream_lines() -> Result<()> {
-        let lines: Result<Vec<_>> = sh("echo a && echo b")
-            .stream_lines_async()
-            .await?
-            .collect();
+        let lines: Result<Vec<_>> = sh("echo a && echo b").stream_lines_async().await?.collect();
         let lines = lines?
             .into_iter()
             .map(|line| line.trim().to_string())
@@ -800,24 +785,30 @@ mod tests {
         let file = dir.path().join("out.txt");
         let output = sh("echo hi").tee(&file)?;
         assert!(file.exists());
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("hi"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("hi")
+        );
 
         let pipe_file = dir.path().join("pipe.txt");
         let pipeline = sh("echo hi").pipe(sh("more"));
         let output = pipeline.tee(&pipe_file)?;
         assert!(pipe_file.exists());
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("hi"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("hi")
+        );
 
         let err_file = dir.path().join("err.txt");
         let err_output = stderr_command().tee_stderr(&err_file)?;
         assert!(err_file.exists());
-        assert!(String::from_utf8_lossy(&err_output.stderr)
-            .to_lowercase()
-            .contains("warn"));
+        assert!(
+            String::from_utf8_lossy(&err_output.stderr)
+                .to_lowercase()
+                .contains("warn")
+        );
         Ok(())
     }
 }

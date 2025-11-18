@@ -1,4 +1,4 @@
-# Qshr (صدف)
+# Qshr (قِشر)
 
 Qshr is a small Turtle-inspired toolkit for writing shell-style scripts in
 Rust. A single `use qshr::prelude::*;` gives you:
@@ -43,15 +43,9 @@ use qshr::prelude::*;
 use std::time::Duration;
 
 fn main() -> qshr::Result<()> {
-    let events = watch_filtered(
-        ".",
-        Duration::from_secs(1),
-        10,
-        Duration::from_millis(300),
-        "**/*.rs",
-    )?;
-
+    let events = watch_filtered(".", Duration::from_millis(300), "**/*.rs")?;
     for event in events {
+        let event = event?;
         println!("changed: {}", event.path().display());
         sh("cargo check").run()?;
     }

@@ -1,26 +1,26 @@
 use crate::{Result, Shell};
 
 use std::{
-    collections::HashMap,
+    collections::VecDeque,
     env,
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process,
-    thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use std::sync::mpsc::{self, Receiver};
+
 #[cfg(feature = "async")]
-use tokio::{sync::mpsc, task};
+use tokio::{sync::mpsc as async_mpsc, task};
 #[cfg(feature = "async")]
 use tokio_stream::wrappers::ReceiverStream;
 
-#[cfg(feature = "async")]
-use crate::Error;
-
-use glob::glob as glob_iter;
+use glob::{glob as glob_iter, Pattern};
+use notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode};
+use notify::Watcher as _;
 
 /// Metadata about a filesystem path captured during listing operations.
 #[derive(Debug, Clone)]
@@ -137,10 +137,7 @@ pub fn walk_files(root: impl AsRef<Path>) -> Result<Shell<PathEntry>> {
 }
 
 /// Walks the tree and keeps entries matching the predicate.
-pub fn walk_filter<F>(
-    root: impl AsRef<Path>,
-    predicate: F,
-) -> Result<Shell<PathEntry>>
+pub fn walk_filter<F>(root: impl AsRef<Path>, predicate: F) -> Result<Shell<PathEntry>>
 where
     F: FnMut(&PathEntry) -> bool + 'static,
 {
@@ -190,10 +187,7 @@ pub fn copy_file(from: impl AsRef<Path>, to: impl AsRef<Path>) -> Result<()> {
 
 /// Appends bytes to the end of the given file, creating it if needed.
 pub fn append_text(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     file.write_all(contents.as_ref())?;
     Ok(())
 }
@@ -324,89 +318,124 @@ impl WatchEvent {
     }
 }
 
-/// Simple polling watcher that diffs directory snapshots.
+/// Native watcher backed by the `notify` crate.
 pub struct Watcher {
-    root: PathBuf,
-    snapshot: HashMap<PathBuf, PathEntry>,
+    _inner: RecommendedWatcher,
+    rx: Receiver<std::result::Result<notify::Event, notify::Error>>,
 }
 
 impl Watcher {
+    /// Starts watching `root` recursively for filesystem changes.
     pub fn new(root: impl AsRef<Path>) -> Result<Self> {
         let root = root.as_ref().to_path_buf();
-        let snapshot = snapshot_dir(&root)?;
-        Ok(Self { root, snapshot })
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = notify::recommended_watcher(move |res| {
+            let _ = tx.send(res);
+        })?;
+        watcher.watch(&root, RecursiveMode::Recursive)?;
+        Ok(Self { _inner: watcher, rx })
     }
 
-    /// Polls for changes since the last call.
-    pub fn poll(&mut self) -> Result<Vec<WatchEvent>> {
-        let current = snapshot_dir(&self.root)?;
-        let events = diff_snapshots(&self.snapshot, &current);
-        self.snapshot = current;
-        Ok(events)
+    /// Converts this watcher into a [`Shell`] that yields events as they occur.
+    pub fn into_shell(self) -> Shell<Result<WatchEvent>> {
+        Shell::new(WatcherIter::new(self._inner, self.rx))
     }
 }
 
-/// Convenience helper that polls a directory on a fixed interval and collects events.
-///
-/// This is a simple, cross-platform polling watcher; for high-frequency workloads,
-/// consider driving [`Watcher`] directly or integrating a platform-specific watcher.
-pub fn watch(
-    root: impl AsRef<Path>,
-    interval: Duration,
-    iterations: usize,
-) -> Result<Shell<WatchEvent>> {
-    let mut watcher = Watcher::new(root)?;
-    let mut events = Vec::new();
-    for _ in 0..iterations {
-        if interval > Duration::from_millis(0) {
-            thread::sleep(interval);
+struct WatcherIter {
+    _inner: RecommendedWatcher,
+    rx: Receiver<std::result::Result<notify::Event, notify::Error>>,
+    pending: VecDeque<Result<WatchEvent>>,
+}
+
+impl WatcherIter {
+    fn new(
+        _inner: RecommendedWatcher,
+        rx: Receiver<std::result::Result<notify::Event, notify::Error>>,
+    ) -> Self {
+        Self {
+            _inner,
+            rx,
+            pending: VecDeque::new(),
         }
-        events.extend(watcher.poll()?);
     }
-    Ok(Shell::from_iter(events))
+}
+
+impl Iterator for WatcherIter {
+    type Item = Result<WatchEvent>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(event) = self.pending.pop_front() {
+                return Some(event);
+            }
+            match self.rx.recv() {
+                Ok(Ok(event)) => {
+                    let converted = convert_event(event);
+                    if converted.is_empty() {
+                        continue;
+                    }
+                    self.pending
+                        .extend(converted.into_iter().map(Result::Ok));
+                }
+                Ok(Err(err)) => return Some(Err(err.into())),
+                Err(_) => return None,
+            }
+        }
+    }
+}
+
+/// Creates a lazy stream of filesystem changes under `root`.
+pub fn watch(root: impl AsRef<Path>) -> Result<Shell<Result<WatchEvent>>> {
+    Ok(Watcher::new(root)?.into_shell())
 }
 
 /// Filters watch events by glob pattern (case-sensitive).
 pub fn watch_glob(
-    events: Shell<WatchEvent>,
+    events: Shell<Result<WatchEvent>>,
     pattern: impl AsRef<str>,
-) -> Result<Shell<WatchEvent>> {
-    let matcher = glob_iter(pattern.as_ref())?
-        .filter_map(|res| res.ok())
-        .collect::<Vec<_>>();
-    Ok(events.filter(move |event| {
-        let path = match event {
-            WatchEvent::Created(entry) | WatchEvent::Modified(entry) => &entry.path,
-            WatchEvent::Removed(path) => path,
-        };
-        matcher.iter().any(|glob_path| path.starts_with(glob_path))
+) -> Result<Shell<Result<WatchEvent>>> {
+    let pattern = Pattern::new(pattern.as_ref())?;
+    Ok(events.filter(move |event| match event {
+        Ok(event) => pattern.matches_path(event.path()),
+        Err(_) => true,
     }))
 }
 
 /// Debounces watch events emitted by [`watch`], removing consecutive duplicates by path.
 pub fn debounce_watch(
-    events: Shell<WatchEvent>,
+    events: Shell<Result<WatchEvent>>,
     window: Duration,
-) -> Shell<WatchEvent> {
+) -> Shell<Result<WatchEvent>> {
     let mut last_emitted: Option<(PathBuf, SystemTime)> = None;
     events.filter_map(move |event| {
-        let (path, timestamp) = match &event {
-            WatchEvent::Created(entry) | WatchEvent::Modified(entry) => {
-                (entry.path.clone(), entry.modified().unwrap_or_else(SystemTime::now))
+        match event {
+            Ok(event) => {
+                let (path, timestamp) = match &event {
+                    WatchEvent::Created(entry) | WatchEvent::Modified(entry) => (
+                        entry.path.clone(),
+                        entry.modified().unwrap_or_else(SystemTime::now),
+                    ),
+                    WatchEvent::Removed(path) => (path.clone(), SystemTime::now()),
+                };
+                let should_emit = match &last_emitted {
+                    Some((last_path, last_time)) => {
+                        last_path != &path
+                            || timestamp
+                                .duration_since(*last_time)
+                                .unwrap_or_default()
+                                >= window
+                    }
+                    None => true,
+                };
+                if should_emit {
+                    last_emitted = Some((path, timestamp));
+                    Some(Ok(event))
+                } else {
+                    None
+                }
             }
-            WatchEvent::Removed(path) => (path.clone(), SystemTime::now()),
-        };
-        let should_emit = match &last_emitted {
-            Some((last_path, last_time)) => {
-                last_path != &path || timestamp.duration_since(*last_time).unwrap_or_default() >= window
-            }
-            None => true,
-        };
-        if should_emit {
-            last_emitted = Some((path, timestamp));
-            Some(event)
-        } else {
-            None
+            Err(err) => Some(Err(err)),
         }
     })
 }
@@ -414,12 +443,10 @@ pub fn debounce_watch(
 /// Convenience helper composing `watch`, `debounce_watch`, and `watch_glob`.
 pub fn watch_filtered(
     root: impl AsRef<Path>,
-    interval: Duration,
-    iterations: usize,
     debounce_window: Duration,
     pattern: impl AsRef<str>,
-) -> Result<Shell<WatchEvent>> {
-    let events = watch(root, interval, iterations)?;
+) -> Result<Shell<Result<WatchEvent>>> {
+    let events = watch(root)?;
     let debounced = debounce_watch(events, debounce_window);
     watch_glob(debounced, pattern)
 }
@@ -428,21 +455,20 @@ pub fn watch_filtered(
 #[cfg(feature = "async")]
 pub async fn watch_async(
     root: impl AsRef<Path> + Send + 'static,
-    interval: Duration,
-    iterations: usize,
-) -> Result<Shell<WatchEvent>> {
+    limit: usize,
+) -> Result<Shell<Result<WatchEvent>>> {
     let root = root.as_ref().to_path_buf();
     let events = task::spawn_blocking(move || {
-        let shell = watch(root, interval, iterations)?;
-        Ok::<Vec<WatchEvent>, Error>(shell.collect())
+        let shell = watch(root)?;
+        Ok::<Vec<_>, crate::Error>(shell.take(limit).collect())
     })
-        .await
-        .map_err(|err| {
-            Error::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("watch task panicked: {err}"),
-            ))
-        })??;
+    .await
+    .map_err(|err| {
+        crate::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("watch task panicked: {err}"),
+        ))
+    })??;
     Ok(Shell::from_iter(events))
 }
 
@@ -450,35 +476,20 @@ pub async fn watch_async(
 #[cfg(feature = "async")]
 pub async fn watch_async_stream(
     root: impl AsRef<Path> + Send + 'static,
-    interval: Duration,
-    iterations: usize,
 ) -> Result<ReceiverStream<Result<WatchEvent>>> {
     let root = root.as_ref().to_path_buf();
-    let (tx, rx) = mpsc::channel(32);
+    let (tx, rx) = async_mpsc::channel(32);
     task::spawn_blocking(move || {
-        let mut watcher = match Watcher::new(&root) {
-            Ok(w) => w,
+        let events = match watch(&root) {
+            Ok(shell) => shell,
             Err(err) => {
                 let _ = tx.blocking_send(Err(err));
                 return;
             }
         };
-        for _ in 0..iterations {
-            if interval > Duration::from_millis(0) {
-                std::thread::sleep(interval);
-            }
-            match watcher.poll() {
-                Ok(events) => {
-                    for event in events {
-                        if tx.blocking_send(Ok(event)).is_err() {
-                            return;
-                        }
-                    }
-                }
-                Err(err) => {
-                    let _ = tx.blocking_send(Err(err));
-                    return;
-                }
+        for event in events {
+            if tx.blocking_send(event).is_err() {
+                return;
             }
         }
     });
@@ -489,61 +500,43 @@ pub async fn watch_async_stream(
 #[cfg(feature = "async")]
 pub async fn watch_filtered_async(
     root: impl AsRef<Path> + Send + 'static,
-    interval: Duration,
-    iterations: usize,
+    limit: usize,
     debounce_window: Duration,
     pattern: impl AsRef<str>,
-) -> Result<Shell<WatchEvent>> {
-    let events = watch_async(root, interval, iterations).await?;
+) -> Result<Shell<Result<WatchEvent>>> {
+    let events = watch_async(root, limit).await?;
     let debounced = debounce_watch(events, debounce_window);
     watch_glob(debounced, pattern)
 }
 
-fn snapshot_dir(root: &Path) -> Result<HashMap<PathBuf, PathEntry>> {
-    let mut map = HashMap::new();
-    if !root.exists() {
-        return Ok(map);
-    }
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        map.insert(
-            entry.path(),
-            PathEntry {
-                path: entry.path(),
-                metadata: entry.metadata()?,
-            },
-        );
-    }
-    Ok(map)
-}
-
-fn diff_snapshots(
-    previous: &HashMap<PathBuf, PathEntry>,
-    current: &HashMap<PathBuf, PathEntry>,
-) -> Vec<WatchEvent> {
-    let mut events = Vec::new();
-    for (path, entry) in current {
-        match previous.get(path) {
-            None => events.push(WatchEvent::Created(entry.clone())),
-            Some(prev) => {
-                if metadata_changed(prev, entry) {
-                    events.push(WatchEvent::Modified(entry.clone()));
+fn convert_event(event: Event) -> Vec<WatchEvent> {
+    let mut out = Vec::new();
+    for path in event.paths {
+        match event.kind {
+            EventKind::Create(_) => {
+                if let Some(entry) = path_entry_for(&path) {
+                    out.push(WatchEvent::Created(entry));
                 }
             }
+            EventKind::Modify(_) | EventKind::Any | EventKind::Other => {
+                if let Some(entry) = path_entry_for(&path) {
+                    out.push(WatchEvent::Modified(entry));
+                }
+            }
+            EventKind::Remove(_) => {
+                out.push(WatchEvent::Removed(path));
+            }
+            _ => {}
         }
     }
-    for path in previous.keys() {
-        if !current.contains_key(path) {
-            events.push(WatchEvent::Removed(path.clone()));
-        }
-    }
-    events
+    out
 }
 
-fn metadata_changed(a: &PathEntry, b: &PathEntry) -> bool {
-    a.size() != b.size()
-        || a.is_dir() != b.is_dir()
-        || a.modified() != b.modified()
+fn path_entry_for(path: &Path) -> Option<PathEntry> {
+    fs::metadata(path).ok().map(|metadata| PathEntry {
+        path: path.to_path_buf(),
+        metadata,
+    })
 }
 
 /// Expands filesystem globs (e.g. `*.rs`) into a stream of paths.
@@ -567,10 +560,7 @@ pub fn glob_entries(pattern: impl AsRef<str>) -> Result<Shell<PathEntry>> {
 }
 
 /// Filters entries to only those matching the provided extension (case-insensitive).
-pub fn filter_extension(
-    entries: Shell<PathEntry>,
-    ext: impl AsRef<str>,
-) -> Shell<PathEntry> {
+pub fn filter_extension(entries: Shell<PathEntry>, ext: impl AsRef<str>) -> Shell<PathEntry> {
     let needle = ext.as_ref().to_ascii_lowercase();
     entries.filter(move |entry| {
         entry
@@ -581,24 +571,13 @@ pub fn filter_extension(
 }
 
 /// Keeps entries at or above the specified size (in bytes).
-pub fn filter_size(
-    entries: Shell<PathEntry>,
-    min_bytes: u64,
-) -> Shell<PathEntry> {
+pub fn filter_size(entries: Shell<PathEntry>, min_bytes: u64) -> Shell<PathEntry> {
     entries.filter(move |entry| entry.size() >= min_bytes)
 }
 
 /// Keeps entries modified at or after `since`.
-pub fn filter_modified_since(
-    entries: Shell<PathEntry>,
-    since: SystemTime,
-) -> Shell<PathEntry> {
-    entries.filter(move |entry| {
-        entry
-            .modified()
-            .map(|time| time >= since)
-            .unwrap_or(false)
-    })
+pub fn filter_modified_since(entries: Shell<PathEntry>, since: SystemTime) -> Shell<PathEntry> {
+    entries.filter(move |entry| entry.modified().map(|time| time >= since).unwrap_or(false))
 }
 
 /// Creates a uniquely named temporary file and returns its path.
@@ -611,8 +590,7 @@ pub fn temp_file(prefix: impl AsRef<str>) -> Result<PathBuf> {
         .unwrap_or_default()
         .as_millis();
     for attempt in 0..100 {
-        let candidate =
-            base.join(format!("{prefix}-{pid}-{now}-{attempt}.tmp"));
+        let candidate = base.join(format!("{prefix}-{pid}-{now}-{attempt}.tmp"));
         match OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -722,10 +700,7 @@ mod tests {
 
         let files: Vec<_> = walk_files(&move_target)?.collect();
         assert_eq!(files.len(), 1);
-        assert_eq!(
-            files[0].file_name().unwrap().to_string_lossy(),
-            "data.txt"
-        );
+        assert_eq!(files[0].file_name().unwrap().to_string_lossy(), "data.txt");
 
         let globbed: Vec<_> = glob_entries(
             move_target
@@ -737,12 +712,10 @@ mod tests {
         .collect();
         assert!(!globbed.is_empty());
 
-        let filtered: Vec<_> =
-            filter_extension(Shell::from_iter(globbed.clone()), "txt").collect();
+        let filtered: Vec<_> = filter_extension(Shell::from_iter(globbed.clone()), "txt").collect();
         assert_eq!(filtered.len(), globbed.len());
 
-        let filtered_size: Vec<_> =
-            filter_size(Shell::from_iter(globbed.clone()), 1).collect();
+        let filtered_size: Vec<_> = filter_size(Shell::from_iter(globbed.clone()), 1).collect();
         assert_eq!(filtered_size.len(), globbed.len());
 
         let filtered_recent: Vec<_> = filter_modified_since(
@@ -765,26 +738,42 @@ mod tests {
     fn watcher_detects_changes() -> crate::Result<()> {
         let dir = tempdir()?;
         let file = dir.path().join("watched.txt");
-        let mut watcher = Watcher::new(dir.path())?;
-        assert!(watcher.poll()?.is_empty());
+        let mut events = watch(dir.path())?;
 
         write_text(&file, "one")?;
-        let events = watcher.poll()?;
-        assert!(matches!(
-            events.as_slice(),
-            [WatchEvent::Created(created)] if created.path == file
-        ));
+        let created_path = file.clone();
+        let created = next_event(&mut events, move |event| match event {
+            WatchEvent::Created(entry) => entry.path == created_path,
+            _ => false,
+        })?;
+        assert!(matches!(created, WatchEvent::Created(entry) if entry.path == file));
 
         write_text(&file, "two")?;
-        let events = watcher.poll()?;
-        assert!(!events.is_empty() || true);
+        // Drain whichever event is next for coverage.
+        let _ = next_event(&mut events, |_| true)?;
 
         rm(&file)?;
-        let events = watcher.poll()?;
-        assert!(matches!(
-            events.as_slice(),
-            [WatchEvent::Removed(path)] if path == &file
-        ));
+        let removed_path = file.clone();
+        let removed = next_event(&mut events, move |event| match event {
+            WatchEvent::Removed(path) => path == &removed_path,
+            _ => false,
+        })?;
+        assert!(matches!(removed, WatchEvent::Removed(path) if path == file));
         Ok(())
+    }
+
+    fn next_event<F>(
+        events: &mut Shell<Result<WatchEvent>>,
+        predicate: F,
+    ) -> crate::Result<WatchEvent>
+    where
+        F: Fn(&WatchEvent) -> bool,
+    {
+        loop {
+            let event = events.next().expect("watch stream closed")?;
+            if predicate(&event) {
+                return Ok(event);
+            }
+        }
     }
 }

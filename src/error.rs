@@ -1,13 +1,9 @@
 use std::{
-    error::Error as StdError,
-    ffi::OsString,
-    fmt,
-    io,
-    process::ExitStatus,
-    string::FromUtf8Error,
+    error::Error as StdError, ffi::OsString, fmt, io, process::ExitStatus, string::FromUtf8Error,
 };
 
 use glob::{GlobError, PatternError};
+use notify::Error as NotifyError;
 
 /// Result type used throughout the crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -24,6 +20,7 @@ pub enum Error {
     Utf8(FromUtf8Error),
     GlobPattern(PatternError),
     Glob(GlobError),
+    Notify(NotifyError),
 }
 
 impl fmt::Display for Error {
@@ -44,6 +41,7 @@ impl fmt::Display for Error {
             Error::Utf8(err) => write!(f, "UTF-8 conversion failed: {err}"),
             Error::GlobPattern(err) => write!(f, "invalid glob pattern: {err}"),
             Error::Glob(err) => write!(f, "glob resolution failed: {err}"),
+            Error::Notify(err) => write!(f, "file watcher error: {err}"),
         }
     }
 }
@@ -55,6 +53,7 @@ impl StdError for Error {
             Error::Utf8(err) => Some(err),
             Error::GlobPattern(err) => Some(err),
             Error::Glob(err) => Some(err),
+            Error::Notify(err) => Some(err),
             Error::Command { .. } => None,
         }
     }
@@ -81,5 +80,11 @@ impl From<PatternError> for Error {
 impl From<GlobError> for Error {
     fn from(value: GlobError) -> Self {
         Error::Glob(value)
+    }
+}
+
+impl From<NotifyError> for Error {
+    fn from(value: NotifyError) -> Self {
+        Error::Notify(value)
     }
 }

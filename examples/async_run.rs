@@ -1,7 +1,7 @@
-#[cfg(feature = "async")]
-use qshr::prelude::*;
 #[cfg(not(feature = "async"))]
 use qshr::Result;
+#[cfg(feature = "async")]
+use qshr::prelude::*;
 
 #[cfg(feature = "async")]
 #[tokio::main]

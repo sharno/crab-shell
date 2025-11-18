@@ -6,22 +6,21 @@
 //! Rust standard library to keep the dependency footprint tiny.
 
 mod command;
+mod env;
 mod error;
 mod fs;
-mod env;
 mod shell;
 
 pub mod prelude;
 
-pub use command::{cmd, sh, Command, CommandOutput, Pipeline};
-pub use error::{Error, Result};
+pub use command::{Command, CommandOutput, Pipeline, cmd, sh};
 pub use env::*;
+pub use error::{Error, Result};
 pub use fs::{
-    append_text, cat, copy_dir, copy_entries, copy_file, debounce_watch,
-    filter_extension, filter_modified_since, filter_size, glob, glob_entries,
-    ls, ls_detailed, mkdir_all, move_path, read_lines, read_text, rm, temp_file,
-    watch, watch_filtered, watch_glob, walk, walk_detailed, walk_files,
-    walk_filter, write_lines, write_text, PathEntry, WatchEvent, Watcher,
+    PathEntry, WatchEvent, Watcher, append_text, cat, copy_dir, copy_entries, copy_file,
+    debounce_watch, filter_extension, filter_modified_since, filter_size, glob, glob_entries, ls,
+    ls_detailed, mkdir_all, move_path, read_lines, read_text, rm, temp_file, walk, walk_detailed,
+    walk_files, walk_filter, watch, watch_filtered, watch_glob, write_lines, write_text,
 };
 
 #[cfg(feature = "async")]
@@ -53,8 +52,7 @@ mod tests {
 
     #[test]
     fn shell_basic_map() {
-        let mapped: Vec<_> =
-            Shell::from_iter([1, 2, 3]).map(|n| n * n).collect();
+        let mapped: Vec<_> = Shell::from_iter([1, 2, 3]).map(|n| n * n).collect();
         assert_eq!(mapped, vec![1, 4, 9]);
     }
 }

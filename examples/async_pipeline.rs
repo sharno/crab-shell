@@ -4,8 +4,7 @@ use qshr::prelude::*;
 #[tokio::main]
 async fn main() -> qshr::Result<()> {
     let pipeline = sh("echo alpha && echo beta").pipe(sh("more"));
-    let lines: qshr::Result<Vec<_>> =
-        pipeline.stream_lines_async().await?.collect();
+    let lines: qshr::Result<Vec<_>> = pipeline.stream_lines_async().await?.collect();
     println!("lines: {:?}", lines?);
     Ok(())
 }

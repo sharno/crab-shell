@@ -5,12 +5,13 @@ fn main() -> qshr::Result<()> {
     let dir = tempfile::tempdir()?;
     let root = dir.path().to_path_buf();
     let file = root.join("debounce.txt");
+    let events = watch(&root)?;
+
     write_text(&file, "hello")?;
     write_text(&file, "hello again")?;
 
-    let events = watch(&root, Duration::from_millis(0), 2)?;
-    for event in debounce_watch(events, Duration::from_millis(1)) {
-        println!("debounced event: {:?}", event);
+    for event in debounce_watch(events, Duration::from_millis(1)).take(2) {
+        println!("debounced event: {:?}", event?);
     }
 
     Ok(())

@@ -1,16 +1,16 @@
 use qshr::prelude::*;
-use std::time::Duration;
 
 fn main() -> qshr::Result<()> {
     let dir = tempfile::tempdir()?;
     let file = dir.path().join("trigger.txt");
 
-    // Simulate file creation/modification
+    let events = watch(dir.path())?;
     write_text(&file, "initial")?;
+    write_text(&file, "updated")?;
+    rm(&file)?;
 
-    let events = watch(dir.path(), Duration::from_millis(0), 1)?;
-    for event in events {
-        match event {
+    for event in events.take(3) {
+        match event? {
             WatchEvent::Created(entry) => {
                 println!("Detected creation of {}", entry.path.display());
                 sh("echo change detected").run()?;
