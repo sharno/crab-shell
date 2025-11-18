@@ -239,3 +239,14 @@ Browse `examples/` for small scripts—`script.rs`, `watch_glob.rs`,
 ## Status
 
 The crate aims to stay compact and dependency-light. Contributions are welcome!
+
+## Submodules
+
+This repository vendors the original Haskell [`turtle`](https://github.com/Gabriella439/turtle)
+project as a Git submodule (`turtle/`). After cloning, make sure to run:
+
+```
+git submodule update --init
+```
+
+so the submodule is checked out locally.
