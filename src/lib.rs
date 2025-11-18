@@ -9,6 +9,8 @@ mod command;
 mod env;
 mod error;
 mod fs;
+#[doc(hidden)]
+pub mod macros;
 mod shell;
 
 pub mod prelude;
@@ -26,64 +28,6 @@ pub use fs::{
 #[cfg(feature = "async")]
 pub use fs::{watch_async, watch_async_stream, watch_filtered_async};
 pub use shell::Shell;
-
-/// Convenience macro for writing quick shell-style scripts.
-#[macro_export]
-macro_rules! qshr {
-    ($($body:tt)*) => {{
-        use $crate::prelude::*;
-        let __qshr_entry = || -> $crate::Result<()> {
-            $crate::__qshr_execute! { $($body)* }
-        };
-        __qshr_entry()
-    }};
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __qshr_build_pipeline {
-    ($cmd:literal) => {
-        $crate::sh($cmd)
-    };
-    ($cmd:literal | $($rest:tt)+) => {{
-        $crate::sh($cmd).pipe($crate::__qshr_build_pipeline!($($rest)+))
-    }};
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __qshr_execute {
-    () => {
-        Ok(())
-    };
-    ($first:literal $(| $next:literal)+ ; $($rest:tt)*) => {{
-        $crate::__qshr_build_pipeline!($first $(| $next)+).run()?;
-        $crate::__qshr_execute! { $($rest)* }
-    }};
-    ($first:literal $(| $next:literal)+) => {{
-        $crate::__qshr_build_pipeline!($first $(| $next)+).run()?;
-        Ok(())
-    }};
-    ($cmd:literal ; $($rest:tt)*) => {{
-        $crate::sh($cmd).run()?;
-        $crate::__qshr_execute! { $($rest)* }
-    }};
-    ($cmd:literal) => {{
-        $crate::sh($cmd).run()?;
-        Ok(())
-    }};
-    ($stmt:stmt ; $($rest:tt)*) => {{
-        $stmt
-        $crate::__qshr_execute! { $($rest)* }
-    }};
-    ($stmt:stmt) => {{
-        $stmt
-        Ok(())
-    }};
-    ($expr:expr) => {{
-        $expr
-    }};
-}
 
 /// Convenience module with the most frequently used items.
 ///
@@ -115,12 +59,21 @@ mod tests {
     }
 
     #[test]
+    #[allow(redundant_semicolons)]
     fn macro_runs_script() -> Result<()> {
         qshr! {
             "echo macro works";
             let output = cmd("rustc").arg("--version").read()?;
             assert!(output.contains("rustc"));
             "echo macro works" | "more";
+        }?;
+
+        qshr! {
+            env "QSHR_TEST_VAR" = "42";
+            let val = var("QSHR_TEST_VAR");
+            assert_eq!(val.and_then(|v| v.into_string().ok()), Some("42".into()));
+            unset "QSHR_TEST_VAR";
+            assert!(var("QSHR_TEST_VAR").is_none());
         }?;
         Ok(())
     }

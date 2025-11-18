@@ -63,16 +63,49 @@ fn main() -> qshr::Result<()> {
     qshr! {
         println!("Running scripted commands...");
         "echo hi from macro";
+        env "RUST_BACKTRACE" = "1";
+        "echo RUST_BACKTRACE=$RUST_BACKTRACE";
 
         let rustc = cmd("rustc").arg("--version").read()?;
         println!("rustc -> {}", rustc.trim());
 
         "echo listing src" | "more";
+        unset "RUST_BACKTRACE";
     }
 }
 ```
 
-String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed.
+String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
+
+#### Macro Patterns
+
+```rust
+use qshr::{prelude::*, qshr};
+
+fn main() -> qshr::Result<()> {
+    let tracked = ["src/lib.rs", "src/shell.rs"];
+    qshr! {
+        println!("Sanity checks");
+        "cargo fmt";
+        "cargo test --lib";
+
+        for path in &tracked {
+            let summary = cmd("wc").arg("-l").arg(path).read()?;
+            print!("{summary}");
+        };
+
+        {
+            let status = cmd("git").args(["status", "--short"]).read()?;
+            println!("git status:\n{status}");
+        };
+
+        "rg TODO -n src" | "head -n 5";
+    }?;
+    Ok(())
+}
+```
+
+Within `qshr!`, any Rust statement is permitted, so you can loop, branch, or shadow variables while the string literals do the repetitive shell work for you.
 
 ## Features
 
