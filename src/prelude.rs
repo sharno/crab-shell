@@ -1,5 +1,5 @@
 pub use crate::{
-    Shell, cmd,
+    DoubleEndedShell, Shell, cmd,
     command::{Command, CommandOutput, Pipeline, sh},
     fs::{
         GlobCache, PathEntry, WatchEvent, Watcher, append_text, cat, copy_dir, copy_entries,

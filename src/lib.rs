@@ -27,7 +27,7 @@ pub use fs::{
 
 #[cfg(feature = "async")]
 pub use fs::{watch_async, watch_async_stream, watch_filtered_async};
-pub use shell::Shell;
+pub use shell::{DoubleEndedShell, Shell};
 
 /// Convenience module with the most frequently used items.
 ///
