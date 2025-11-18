@@ -170,7 +170,7 @@ fn main() -> qshr::Result<()> {
 ## Examples
 
 Browse `examples/` for small scripts—`script.rs`, `watch_glob.rs`,
-`watch_debounce.rs`, the async runners, etc. Run them with
+`watch_debounce.rs`, the async runners, `macro_watch.rs`, etc. Run them with
 `cargo run --example <name>`.
 
 ## Status
