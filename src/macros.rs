@@ -232,7 +232,7 @@ impl MacroRunnable for crate::Command {
     }
 }
 
-impl<'a> MacroRunnable for &'a crate::Command {
+impl MacroRunnable for &crate::Command {
     fn run_from_macro(self) -> crate::Result<()> {
         self.run()
     }
@@ -244,7 +244,7 @@ impl MacroRunnable for crate::Pipeline {
     }
 }
 
-impl<'a> MacroRunnable for &'a crate::Pipeline {
+impl MacroRunnable for &crate::Pipeline {
     fn run_from_macro(self) -> crate::Result<()> {
         self.run()
     }

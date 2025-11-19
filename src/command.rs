@@ -134,10 +134,10 @@ impl Command {
         command.stdout(Stdio::inherit());
         command.stderr(Stdio::inherit());
         let mut child = command.spawn()?;
-        if let Some(input) = &self.stdin {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input)?;
-            }
+        if let Some(input) = &self.stdin
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(input)?;
         }
         let status = child.wait()?;
         if status.success() {
@@ -178,10 +178,10 @@ impl Command {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        if let Some(input) = &self.stdin {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input)?;
-            }
+        if let Some(input) = &self.stdin
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(input)?;
         }
         let stdout = child
             .stdout
@@ -281,10 +281,10 @@ impl Command {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        if let Some(input) = &self.stdin {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input).await?;
-            }
+        if let Some(input) = &self.stdin
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(input).await?;
         }
         let output = child.wait_with_output().await?;
         if !output.status.success() {
@@ -327,10 +327,10 @@ impl Command {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        if let Some(input) = &self.stdin {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input)?;
-            }
+        if let Some(input) = &self.stdin
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(input)?;
         }
         let stdout = child
             .stdout
@@ -416,10 +416,10 @@ impl Command {
         command.stdout(Stdio::piped());
         command.stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        if let Some(input) = &self.stdin {
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(input)?;
-            }
+        if let Some(input) = &self.stdin
+            && let Some(mut stdin) = child.stdin.take()
+        {
+            stdin.write_all(input)?;
         }
         Ok(child.wait_with_output()?)
     }
