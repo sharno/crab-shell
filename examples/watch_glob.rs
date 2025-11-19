@@ -8,7 +8,7 @@ fn main() -> qshr::Result<()> {
     let events = watch(&root)?;
     let file = root.join("match.rs");
     write_text(&file, "hello")?;
-    write_text(&root.join("ignore.txt"), "skip")?;
+    write_text(root.join("ignore.txt"), "skip")?;
 
     for event in watch_glob(events, pattern)?.take(1) {
         println!("glob matched event: {:?}", event?.path());

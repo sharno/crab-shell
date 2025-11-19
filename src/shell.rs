@@ -561,6 +561,94 @@ impl<T> Iterator for ChunkIter<T> {
 
 impl<T> std::iter::FusedIterator for ChunkIter<T> {}
 
+struct DistinctIter<T> {
+    iter: Box<dyn Iterator<Item = T> + 'static>,
+    seen: HashSet<T>,
+}
+
+impl<T> DistinctIter<T>
+where
+    T: Eq + std::hash::Hash,
+{
+    fn new(iter: Box<dyn Iterator<Item = T> + 'static>) -> Self {
+        Self {
+            iter,
+            seen: HashSet::new(),
+        }
+    }
+}
+
+impl<T> Iterator for DistinctIter<T>
+where
+    T: Eq + std::hash::Hash + Clone,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .by_ref()
+            .find(|item| self.seen.insert(item.clone()))
+    }
+}
+struct ChunkMapIter<T, U, F>
+where
+    F: FnMut(Vec<T>) -> Vec<U>,
+{
+    iter: Box<dyn Iterator<Item = T> + 'static>,
+    size: usize,
+    mapper: F,
+    current: Option<IntoIter<U>>,
+}
+
+impl<T, U, F> ChunkMapIter<T, U, F>
+where
+    F: FnMut(Vec<T>) -> Vec<U>,
+{
+    fn new(iter: Box<dyn Iterator<Item = T> + 'static>, size: usize, mapper: F) -> Self {
+        Self {
+            iter,
+            size,
+            mapper,
+            current: None,
+        }
+    }
+}
+
+impl<T, U, F> Iterator for ChunkMapIter<T, U, F>
+where
+    F: FnMut(Vec<T>) -> Vec<U>,
+{
+    type Item = U;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(current) = &mut self.current {
+            if let Some(item) = current.next() {
+                return Some(item);
+            }
+            self.current = None;
+        }
+        let mut chunk = Vec::with_capacity(self.size);
+        for _ in 0..self.size {
+            if let Some(item) = self.iter.next() {
+                chunk.push(item);
+            } else {
+                break;
+            }
+        }
+        if chunk.is_empty() {
+            return None;
+        }
+        let mut mapped = (self.mapper)(chunk).into_iter();
+        match mapped.next() {
+            Some(item) => {
+                self.current = Some(mapped);
+                Some(item)
+            }
+            None => self.next(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{DoubleEndedShell, Shell};
@@ -651,92 +739,5 @@ mod tests {
         assert_eq!(shell.next(), Some(1));
         assert_eq!(shell.next_back(), Some(3));
         assert_eq!(shell.into_shell().to_vec(), vec![2]);
-    }
-}
-struct DistinctIter<T> {
-    iter: Box<dyn Iterator<Item = T> + 'static>,
-    seen: HashSet<T>,
-}
-
-impl<T> DistinctIter<T>
-where
-    T: Eq + std::hash::Hash,
-{
-    fn new(iter: Box<dyn Iterator<Item = T> + 'static>) -> Self {
-        Self {
-            iter,
-            seen: HashSet::new(),
-        }
-    }
-}
-
-impl<T> Iterator for DistinctIter<T>
-where
-    T: Eq + std::hash::Hash + Clone,
-{
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .by_ref()
-            .find(|item| self.seen.insert(item.clone()))
-    }
-}
-struct ChunkMapIter<T, U, F>
-where
-    F: FnMut(Vec<T>) -> Vec<U>,
-{
-    iter: Box<dyn Iterator<Item = T> + 'static>,
-    size: usize,
-    mapper: F,
-    current: Option<IntoIter<U>>,
-}
-
-impl<T, U, F> ChunkMapIter<T, U, F>
-where
-    F: FnMut(Vec<T>) -> Vec<U>,
-{
-    fn new(iter: Box<dyn Iterator<Item = T> + 'static>, size: usize, mapper: F) -> Self {
-        Self {
-            iter,
-            size,
-            mapper,
-            current: None,
-        }
-    }
-}
-
-impl<T, U, F> Iterator for ChunkMapIter<T, U, F>
-where
-    F: FnMut(Vec<T>) -> Vec<U>,
-{
-    type Item = U;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(current) = &mut self.current {
-            if let Some(item) = current.next() {
-                return Some(item);
-            }
-            self.current = None;
-        }
-        let mut chunk = Vec::with_capacity(self.size);
-        for _ in 0..self.size {
-            if let Some(item) = self.iter.next() {
-                chunk.push(item);
-            } else {
-                break;
-            }
-        }
-        if chunk.is_empty() {
-            return None;
-        }
-        let mut mapped = (self.mapper)(chunk).into_iter();
-        match mapped.next() {
-            Some(item) => {
-                self.current = Some(mapped);
-                Some(item)
-            }
-            None => self.next(),
-        }
     }
 }
