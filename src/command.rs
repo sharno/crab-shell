@@ -5,7 +5,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Command as StdCommand, ExitStatus, Output, Stdio},
+    process::{Child, ChildStderr, ChildStdout, Command as StdCommand, ExitStatus, Output, Stdio},
     sync::mpsc::{self, Receiver},
     thread,
 };
@@ -426,6 +426,16 @@ impl Command {
 
     fn build_std_command(&self) -> StdCommand {
         let mut command = StdCommand::new(&self.program);
+        self.configure_std_command(&mut command);
+        if self.stdin.is_some() {
+            command.stdin(Stdio::piped());
+        } else if self.inherit_stdin {
+            command.stdin(Stdio::inherit());
+        }
+        command
+    }
+
+    fn configure_std_command(&self, command: &mut StdCommand) {
         command.args(&self.args);
         if self.clear_env {
             command.env_clear();
@@ -434,12 +444,6 @@ impl Command {
         if let Some(dir) = &self.current_dir {
             command.current_dir(dir);
         }
-        if self.stdin.is_some() {
-            command.stdin(Stdio::piped());
-        } else if self.inherit_stdin {
-            command.stdin(Stdio::inherit());
-        }
-        command
     }
 
     #[cfg(feature = "async")]
@@ -505,6 +509,20 @@ pub struct Pipeline {
     stages: Vec<Command>,
 }
 
+#[derive(Debug)]
+struct RunningStage {
+    child: Child,
+    program: OsString,
+}
+
+#[derive(Debug)]
+struct FinalStage {
+    child: Child,
+    program: OsString,
+    stdout: Option<ChildStdout>,
+    stderr: Option<ChildStderr>,
+}
+
 impl Pipeline {
     pub fn new(first: Command, second: Command) -> Self {
         Self {
@@ -520,18 +538,22 @@ impl Pipeline {
 
     /// Executes the pipeline and returns the last stage's output.
     pub fn output(&self) -> Result<CommandOutput> {
-        let mut input: Option<Vec<u8>> = None;
-        let mut last = None;
-        for stage in &self.stages {
-            let mut stage = stage.clone();
-            if let Some(stdin) = input.take() {
-                stage = stage.stdin(stdin);
-            }
-            let output = stage.output()?;
-            input = Some(output.stdout.clone());
-            last = Some(output);
+        let (running, final_stage) = self.spawn_pipeline(true, true, false, false)?;
+        let FinalStage { child, program, .. } = final_stage;
+        let output = child.wait_with_output()?;
+        wait_running_stages(running)?;
+        if !output.status.success() {
+            return Err(Error::Command {
+                program,
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            });
         }
-        last.ok_or_else(|| Error::Io(std::io::Error::other("empty pipeline")))
+        Ok(CommandOutput {
+            status: output.status,
+            stdout: output.stdout,
+            stderr: output.stderr,
+        })
     }
 
     #[deprecated(note = "use `stdout_text` instead")]
@@ -545,7 +567,19 @@ impl Pipeline {
 
     /// Executes the pipeline ignoring stdout/stderr, returning only success.
     pub fn run(&self) -> Result<()> {
-        self.output().map(|_| ())
+        let (running, final_stage) = self.spawn_pipeline(false, false, false, false)?;
+        let FinalStage {
+            mut child, program, ..
+        } = final_stage;
+        let status = child.wait()?;
+        if !status.success() {
+            return Err(Error::Command {
+                program,
+                status,
+                stderr: "stderr inherited by parent".into(),
+            });
+        }
+        wait_running_stages(running)
     }
 
     pub fn lines(&self) -> Result<Shell<String>> {
@@ -588,44 +622,136 @@ impl Pipeline {
 
     /// Streams stdout of the final pipeline stage line-by-line.
     pub fn stream_lines(&self) -> Result<Shell<Result<String>>> {
-        if self.stages.is_empty() {
-            return Err(Error::Io(std::io::Error::other("empty pipeline")));
-        }
-        let mut input: Option<Vec<u8>> = None;
-        for (idx, stage) in self.stages.iter().enumerate() {
-            let mut stage = stage.clone();
-            if let Some(stdin) = input.take() {
-                stage = stage.stdin(stdin);
+        let (running, final_stage) = self.spawn_pipeline(true, true, true, true)?;
+        let FinalStage {
+            mut child,
+            program,
+            mut stdout,
+            mut stderr,
+        } = final_stage;
+        let stdout = stdout
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::other("missing stdout pipe")))?;
+        let stderr = stderr
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::other("missing stderr pipe")))?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let stderr_handle = thread::spawn(move || -> String {
+                let mut buf = String::new();
+                let mut reader = BufReader::new(stderr);
+                let _ = reader.read_to_string(&mut buf);
+                buf
+            });
+            {
+                let mut reader = BufReader::new(stdout);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                            if tx.send(Ok(send_line)).is_err() {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = tx.send(Err(Error::Io(err)));
+                            return;
+                        }
+                    }
+                }
             }
-            let is_last = idx == self.stages.len() - 1;
-            if is_last {
-                return stage.stream_lines();
+            let stderr_output = stderr_handle.join().unwrap_or_default();
+            match child.wait() {
+                Ok(status) => {
+                    if !status.success() {
+                        let _ = tx.send(Err(Error::Command {
+                            program,
+                            status,
+                            stderr: stderr_output,
+                        }));
+                        return;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(Error::Io(err)));
+                    return;
+                }
             }
-            let output = stage.output()?;
-            input = Some(output.stdout);
-        }
-        unreachable!("pipeline always has at least one stage")
+            if let Err(err) = wait_running_stages(running) {
+                let _ = tx.send(Err(err));
+            }
+        });
+        Ok(Shell::new(ReceiverIter::new(rx)))
     }
 
     /// Streams stderr of the final pipeline stage line-by-line.
     pub fn stream_stderr(&self) -> Result<Shell<Result<String>>> {
-        if self.stages.is_empty() {
-            return Err(Error::Io(std::io::Error::other("empty pipeline")));
-        }
-        let mut input: Option<Vec<u8>> = None;
-        for (idx, stage) in self.stages.iter().enumerate() {
-            let mut stage = stage.clone();
-            if let Some(stdin) = input.take() {
-                stage = stage.stdin(stdin);
+        let (running, final_stage) = self.spawn_pipeline(true, true, true, true)?;
+        let FinalStage {
+            mut child,
+            program,
+            mut stdout,
+            mut stderr,
+        } = final_stage;
+        let stdout = stdout
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::other("missing stdout pipe")))?;
+        let stderr = stderr
+            .take()
+            .ok_or_else(|| Error::Io(std::io::Error::other("missing stderr pipe")))?;
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let stdout_handle = thread::spawn(move || -> String {
+                let mut buf = String::new();
+                let mut reader = BufReader::new(stdout);
+                let _ = reader.read_to_string(&mut buf);
+                buf
+            });
+            {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
+                            if tx.send(Ok(send_line)).is_err() {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            let _ = tx.send(Err(Error::Io(err)));
+                            return;
+                        }
+                    }
+                }
             }
-            let is_last = idx == self.stages.len() - 1;
-            if is_last {
-                return stage.stream_stderr();
+            let stdout_output = stdout_handle.join().unwrap_or_default();
+            match child.wait() {
+                Ok(status) => {
+                    if !status.success() {
+                        let _ = tx.send(Err(Error::Command {
+                            program,
+                            status,
+                            stderr: stdout_output,
+                        }));
+                        return;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(Error::Io(err)));
+                    return;
+                }
             }
-            let output = stage.output()?;
-            input = Some(output.stdout);
-        }
-        unreachable!("pipeline always has at least one stage")
+            if let Err(err) = wait_running_stages(running) {
+                let _ = tx.send(Err(err));
+            }
+        });
+        Ok(Shell::new(ReceiverIter::new(rx)))
     }
 
     /// Streams stdout asynchronously by delegating to the blocking implementation.
@@ -644,6 +770,110 @@ impl Pipeline {
         })??;
         Ok(Shell::from_iter(lines))
     }
+
+    fn spawn_pipeline(
+        &self,
+        capture_final_stdout: bool,
+        capture_final_stderr: bool,
+        take_final_stdout: bool,
+        take_final_stderr: bool,
+    ) -> Result<(Vec<RunningStage>, FinalStage)> {
+        if self.stages.is_empty() {
+            return Err(Error::Io(std::io::Error::other("empty pipeline")));
+        }
+        debug_assert!(!take_final_stdout || capture_final_stdout);
+        debug_assert!(!take_final_stderr || capture_final_stderr);
+        let mut previous_stdout: Option<ChildStdout> = None;
+        let mut running = Vec::new();
+        let last_idx = self.stages.len() - 1;
+        for (idx, stage) in self.stages.iter().enumerate() {
+            let mut command = StdCommand::new(&stage.program);
+            stage.configure_std_command(&mut command);
+            if let Some(stdout) = previous_stdout.take() {
+                command.stdin(Stdio::from(stdout));
+            } else if stage.stdin.is_some() {
+                command.stdin(Stdio::piped());
+            } else if stage.inherit_stdin {
+                command.stdin(Stdio::inherit());
+            }
+
+            let is_last = idx == last_idx;
+            if is_last {
+                if capture_final_stdout {
+                    command.stdout(Stdio::piped());
+                }
+                if capture_final_stderr {
+                    command.stderr(Stdio::piped());
+                }
+            } else {
+                command.stdout(Stdio::piped());
+                command.stderr(Stdio::inherit());
+            }
+
+            let mut child = command.spawn()?;
+            if stage.stdin.is_some()
+                && previous_stdout.is_none()
+                && let Some(mut stdin) = child.stdin.take()
+                && let Some(input) = &stage.stdin
+            {
+                stdin.write_all(input)?;
+            }
+
+            if is_last {
+                let stdout_handle =
+                    if take_final_stdout {
+                        Some(child.stdout.take().ok_or_else(|| {
+                            Error::Io(std::io::Error::other("missing stdout pipe"))
+                        })?)
+                    } else {
+                        None
+                    };
+                let stderr_handle =
+                    if take_final_stderr {
+                        Some(child.stderr.take().ok_or_else(|| {
+                            Error::Io(std::io::Error::other("missing stderr pipe"))
+                        })?)
+                    } else {
+                        None
+                    };
+                return Ok((
+                    running,
+                    FinalStage {
+                        child,
+                        program: stage.program.clone(),
+                        stdout: stdout_handle,
+                        stderr: stderr_handle,
+                    },
+                ));
+            }
+
+            let stdout = child
+                .stdout
+                .take()
+                .ok_or_else(|| Error::Io(std::io::Error::other("missing stdout pipe")))?;
+            previous_stdout = Some(stdout);
+            running.push(RunningStage {
+                child,
+                program: stage.program.clone(),
+            });
+        }
+
+        unreachable!("pipeline must spawn at least one stage")
+    }
+}
+
+fn wait_running_stages(stages: Vec<RunningStage>) -> Result<()> {
+    for mut stage in stages {
+        let status = stage.child.wait()?;
+        if !status.success() {
+            return Err(Error::Command {
+                program: stage.program,
+                status,
+                stderr: "stderr inherited by parent".into(),
+            });
+        }
+    }
+    Ok(())
 }
 
 struct ReceiverIter<T> {

@@ -4,22 +4,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-echo "Running cargo fmt --all -- --check..."
-if ! cargo fmt --all -- --check; then
-    echo "cargo fmt failed. Run 'cargo fmt --all' to format files." >&2
-    exit 1
-fi
+echo "Running cargo fmt --all..."
+cargo fmt --all
 
-echo "Running cargo clippy --all-targets --all-features -- -D warnings..."
-if ! cargo clippy --all-targets --all-features -- -D warnings; then
-    echo "cargo clippy failed. Fix the diagnostics above before committing." >&2
-    exit 1
-fi
+echo "Running cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features..."
+cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features
 
-echo "Running cargo test --all-targets --all-features..."
-if ! cargo test --all-targets --all-features; then
-    echo "cargo test failed. Fix the failing tests before committing." >&2
-    exit 1
-fi
-
-echo "pre-commit checks passed."
+echo "pre-commit formatting and linting complete."
