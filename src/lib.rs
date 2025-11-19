@@ -47,7 +47,6 @@ pub use shell::{DoubleEndedShell, Shell};
 ///     Ok(())
 /// }
 /// ```
-
 #[cfg(test)]
 mod tests {
     use super::*;
