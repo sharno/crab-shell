@@ -326,12 +326,18 @@ impl<T> Shell<T> {
     {
         use rayon::prelude::*;
         assert!(chunk_size > 0, "chunk size must be greater than zero");
-        let data: Vec<T> = self.into_iter().collect();
-        let chunks: Vec<Vec<T>> = data
-            .chunks(chunk_size)
-            .map(|chunk| chunk.to_vec())
-            .collect();
-        let results: Vec<U> = chunks.into_par_iter().flat_map(|chunk| f(chunk)).collect();
+        let mut chunks: Vec<Vec<T>> = Vec::new();
+        let mut current = Vec::with_capacity(chunk_size);
+        for item in self.into_iter() {
+            current.push(item);
+            if current.len() == chunk_size {
+                chunks.push(std::mem::take(&mut current));
+            }
+        }
+        if !current.is_empty() {
+            chunks.push(current);
+        }
+        let results: Vec<U> = chunks.into_par_iter().flat_map(f).collect();
         Shell::new(results.into_iter())
     }
 

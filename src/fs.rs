@@ -462,10 +462,7 @@ pub async fn watch_async(
     })
     .await
     .map_err(|err| {
-        crate::Error::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("watch task panicked: {err}"),
-        ))
+        crate::Error::Io(std::io::Error::other(format!("watch task panicked: {err}")))
     })??;
     Ok(Shell::from_iter(events))
 }
