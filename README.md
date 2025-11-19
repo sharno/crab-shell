@@ -240,6 +240,18 @@ Browse `examples/` for small scripts—`script.rs`, `watch_glob.rs`,
 `watch_debounce.rs`, the async runners, `macro_watch.rs`, etc. Run them with
 `cargo run --example <name>`.
 
+## Git hooks
+
+There is a repo-local pre-commit hook at `.githooks/pre-commit` that runs
+`cargo fmt --all -- --check` and `cargo clippy --all-features -- -D warnings`
+before allowing a commit. Opt in by pointing Git at the hooks directory once:
+
+```
+git config core.hooksPath .githooks
+```
+
+You can reset to Git’s default hooks later with `git config --unset core.hooksPath`.
+
 ## Status
 
 The crate aims to stay compact and dependency-light. Contributions are welcome!
