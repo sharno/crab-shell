@@ -669,6 +669,14 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn noop_command() -> Command {
+        if cfg!(windows) {
+            Command::new("cmd").arg("/C").arg("exit 0")
+        } else {
+            Command::new("sh").arg("-c").arg(":")
+        }
+    }
+
     fn stderr_command() -> Command {
         if cfg!(windows) {
             Command::new("cmd").arg("/C").arg("echo warn 1>&2")
@@ -714,7 +722,7 @@ mod tests {
 
     #[test]
     fn pipeline_stream_stderr() -> Result<()> {
-        let pipeline = sh("echo hi").pipe(stderr_command());
+        let pipeline = noop_command().pipe(stderr_command());
         let lines: Result<Vec<_>> = pipeline.stream_stderr()?.collect();
         let lines = lines?;
         assert!(

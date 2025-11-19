@@ -16,4 +16,10 @@ if ! cargo clippy --all-targets --all-features -- -D warnings; then
     exit 1
 fi
 
+echo "Running cargo test --all-targets --all-features..."
+if ! cargo test --all-targets --all-features; then
+    echo "cargo test failed. Fix the failing tests before committing." >&2
+    exit 1
+fi
+
 echo "pre-commit checks passed."

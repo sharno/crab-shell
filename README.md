@@ -243,8 +243,9 @@ Browse `examples/` for small scripts—`script.rs`, `watch_glob.rs`,
 ## Git hooks
 
 There is a repo-local pre-commit hook at `.githooks/pre-commit` that runs
-`cargo fmt --all -- --check` and `cargo clippy --all-features -- -D warnings`
-before allowing a commit. Opt in by pointing Git at the hooks directory once:
+`cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`,
+and `cargo test --all-targets --all-features` before allowing a commit. Opt in by
+pointing Git at the hooks directory once:
 
 ```
 git config core.hooksPath .githooks
