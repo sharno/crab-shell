@@ -932,14 +932,9 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].file_name().unwrap().to_string_lossy(), "data.txt");
 
-        let globbed: Vec<_> = glob_entries(
-            move_target
-                .join("**")
-                .join("*.txt")
-                .to_string_lossy()
-                .to_string(),
-        )?
-        .collect::<crate::Result<Vec<_>>>()?;
+        let glob_pattern = move_target.join("**").join("*.txt");
+        let globbed: Vec<_> = glob_entries(glob_pattern.to_string_lossy())?
+            .collect::<crate::Result<Vec<_>>>()?;
         assert!(!globbed.is_empty());
 
         let filtered: Vec<_> =

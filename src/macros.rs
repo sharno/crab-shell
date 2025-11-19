@@ -328,7 +328,7 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let file = temp.path().join("run-helper.txt");
         crate::qshr! {
-            run pipeline!(sh(&format!("echo via-run-helper > \"{}\"", file.display())) | "more");
+            run pipeline!(sh(format!("echo via-run-helper > \"{}\"", file.display())) | "more");
         }?;
         let contents = std::fs::read_to_string(&file)?;
         assert!(contents.contains("via-run-helper"));
