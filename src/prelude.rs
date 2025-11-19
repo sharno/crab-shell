@@ -1,14 +1,14 @@
 pub use crate::{
-    DoubleEndedShell, Shell, cmd,
-    command::{Command, CommandOutput, Pipeline, sh},
+    cmd,
+    command::{sh, Command, CommandOutput, Pipeline},
     fs::{
-        GlobCache, PathEntry, WatchEvent, Watcher, append_text, cat, copy_dir, copy_entries,
-        copy_file, debounce_watch, filter_extension, filter_modified_since, filter_size, glob,
-        glob_entries, ls, ls_detailed, mkdir_all, move_path, read_lines, read_text, rm, temp_file,
-        walk, walk_detailed, walk_files, walk_filter, watch, watch_channel, watch_filtered,
-        watch_glob, write_lines, write_text,
+        append_text, cat, copy_dir, copy_entries, copy_file, debounce_watch, filter_extension,
+        filter_modified_since, filter_size, glob, glob_entries, ls, ls_detailed, mkdir_all,
+        move_path, read_lines, read_text, rm, temp_file, walk, walk_detailed, walk_files,
+        walk_filter, watch, watch_channel, watch_filtered, watch_glob, write_lines, write_text,
+        GlobCache, PathEntry, WatchEvent, Watcher,
     },
-    home_dir, path_entries, remove_var, set_var, var, which,
+    home_dir, path_entries, remove_var, set_var, var, which, DoubleEndedShell, Shell,
 };
 
 #[cfg(feature = "async")]

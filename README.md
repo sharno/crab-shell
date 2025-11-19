@@ -57,7 +57,7 @@ fn main() -> qshr::Result<()> {
 ### 4. Use the `qshr!` macro
 
 ```rust
-use qshr::{prelude::*, qshr};
+use qshr::{pipeline, prelude::*, qshr};
 
 fn main() -> qshr::Result<()> {
     qshr! {
@@ -70,6 +70,10 @@ fn main() -> qshr::Result<()> {
         println!("rustc -> {}", rustc.trim());
 
         "echo listing src" | "more";
+        let echo_twice = pipeline!(sh("echo builder pipeline") | "more");
+        run echo_twice;
+
+        run pipeline!(sh("echo expression stage") | "more");
         cd("src") {
             "ls";
         };
@@ -85,7 +89,7 @@ fn main() -> qshr::Result<()> {
 }
 ```
 
-String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`, run blocks inside a different directory via `cd("path") { ... }`, and fire blocks in parallel threads with `parallel { ... } { ... };`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
+String literals inside the macro run as shell commands automatically, and you can join them with `|` to build pipelines. When you want to mix in builder-style commands, use the `pipeline!` helper (`pipeline!(sh("echo hi") | "more")`) and run it inline with `run <expr>;`. Regular Rust statements (like the `let rustc = ...` line) work alongside the command sugar so you can still capture output or branch as needed. You can also set/unset environment variables inline with `env "KEY" = ...;` and `unset "KEY";`, run blocks inside a different directory via `cd("path") { ... }`, and fire blocks in parallel threads with `parallel { ... } { ... };`. See `examples/macro.rs` for the basics and `examples/macro_workflow.rs` for a more involved workflow.
 
 ### 5. Build commands with `cmd!`
 

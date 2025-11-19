@@ -23,6 +23,14 @@ macro_rules! cmd {
     }};
 }
 
+/// Macro to compose a [`Pipeline`](crate::Pipeline) from commands or string literals.
+#[macro_export]
+macro_rules! pipeline {
+    ($($body:tt)+) => {{
+        $crate::__qshr_build_expr_pipeline!($($body)+)
+    }};
+}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __qshr_build_pipeline {
@@ -31,6 +39,39 @@ macro_rules! __qshr_build_pipeline {
     };
     ($cmd:literal | $($rest:tt)+) => {{
         $crate::macros::literal_command($cmd).pipe($crate::__qshr_build_pipeline!($($rest)+))
+    }};
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __qshr_build_expr_pipeline {
+    ($($tokens:tt)+) => {
+        $crate::__qshr_parse_expr_pipeline!(() $($tokens)+)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __qshr_parse_expr_pipeline {
+    (($($current:tt)*) | $($rest:tt)+) => {{
+        $crate::__qshr_expr_stage!($($current)*).pipe($crate::__qshr_parse_expr_pipeline!(() $($rest)+))
+    }};
+    (($($current:tt)*)) => {
+        $crate::__qshr_expr_stage!($($current)*)
+    };
+    (($($current:tt)*) $token:tt $($rest:tt)*) => {
+        $crate::__qshr_parse_expr_pipeline!(($($current)* $token) $($rest)*)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __qshr_expr_stage {
+    ($cmd:literal) => {
+        $crate::macros::literal_command($cmd)
+    };
+    ($($expr:tt)+) => {{
+        $($expr)+
     }};
 }
 
@@ -62,6 +103,13 @@ macro_rules! __qshr_execute {
     (env $key:literal = $value:expr) => {{
         $crate::set_var($key, $value);
         Ok(())
+    }};
+    (run $cmd:expr ; $($rest:tt)*) => {{
+        $crate::macros::run_commandlike($cmd)?;
+        $crate::__qshr_execute! { $($rest)* }
+    }};
+    (run $cmd:expr) => {{
+        $crate::macros::run_commandlike($cmd)
     }};
     (unset $key:literal ; $($rest:tt)*) => {{
         $crate::remove_var($key);
@@ -174,6 +222,38 @@ pub fn literal_command(template: &str) -> crate::Command {
     crate::sh(interpolate_command(template))
 }
 
+pub trait MacroRunnable {
+    fn run_from_macro(self) -> crate::Result<()>;
+}
+
+impl MacroRunnable for crate::Command {
+    fn run_from_macro(self) -> crate::Result<()> {
+        self.run()
+    }
+}
+
+impl<'a> MacroRunnable for &'a crate::Command {
+    fn run_from_macro(self) -> crate::Result<()> {
+        self.run()
+    }
+}
+
+impl MacroRunnable for crate::Pipeline {
+    fn run_from_macro(self) -> crate::Result<()> {
+        self.run()
+    }
+}
+
+impl<'a> MacroRunnable for &'a crate::Pipeline {
+    fn run_from_macro(self) -> crate::Result<()> {
+        self.run()
+    }
+}
+
+pub fn run_commandlike(cmd: impl MacroRunnable) -> crate::Result<()> {
+    cmd.run_from_macro()
+}
+
 pub fn with_dir(
     path: impl AsRef<std::path::Path>,
     f: impl FnOnce() -> crate::Result<()>,
@@ -204,7 +284,7 @@ fn is_ident_continue(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{interpolate_command, literal_command, with_dir};
-    use crate::{remove_var, set_var};
+    use crate::{remove_var, set_var, sh};
     use std::env;
 
     #[test]
@@ -232,6 +312,26 @@ mod tests {
     fn literal_command_executes() -> crate::Result<()> {
         let output = literal_command("echo literal-test").stdout_text()?;
         assert!(output.contains("literal-test"));
+        Ok(())
+    }
+
+    #[test]
+    fn pipeline_macro_builds_mixed_stages() -> crate::Result<()> {
+        let pipe = crate::pipeline!(sh("echo expr-stage") | "more");
+        let output = pipe.stdout_text()?;
+        assert!(output.contains("expr-stage"));
+        Ok(())
+    }
+
+    #[test]
+    fn run_helper_executes_commands() -> crate::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let file = temp.path().join("run-helper.txt");
+        crate::qshr! {
+            run pipeline!(sh(&format!("echo via-run-helper > \"{}\"", file.display())) | "more");
+        }?;
+        let contents = std::fs::read_to_string(&file)?;
+        assert!(contents.contains("via-run-helper"));
         Ok(())
     }
 }

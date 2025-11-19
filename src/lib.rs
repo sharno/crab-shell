@@ -15,14 +15,14 @@ mod shell;
 
 pub mod prelude;
 
-pub use command::{Command, CommandOutput, Pipeline, cmd, sh};
+pub use command::{cmd, sh, Command, CommandOutput, Pipeline};
 pub use env::*;
 pub use error::{Error, Result};
 pub use fs::{
-    PathEntry, WatchEvent, Watcher, append_text, cat, copy_dir, copy_entries, copy_file,
-    debounce_watch, filter_extension, filter_modified_since, filter_size, glob, glob_entries, ls,
-    ls_detailed, mkdir_all, move_path, read_lines, read_text, rm, temp_file, walk, walk_detailed,
-    walk_files, walk_filter, watch, watch_filtered, watch_glob, write_lines, write_text,
+    append_text, cat, copy_dir, copy_entries, copy_file, debounce_watch, filter_extension,
+    filter_modified_since, filter_size, glob, glob_entries, ls, ls_detailed, mkdir_all, move_path,
+    read_lines, read_text, rm, temp_file, walk, walk_detailed, walk_files, walk_filter, watch,
+    watch_filtered, watch_glob, write_lines, write_text, PathEntry, WatchEvent, Watcher,
 };
 
 #[cfg(feature = "async")]

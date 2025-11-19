@@ -10,6 +10,20 @@ pub fn var(key: impl AsRef<OsStr>) -> Option<OsString> {
 }
 
 /// Sets an environment variable for the current process.
+///
+/// Mirrors [`std::env::set_var`] but keeps the crate API surface cohesive.
+/// Panics if `key` is empty or contains an equals sign, just like the standard
+/// library call.
+///
+/// # Examples
+///
+/// ```
+/// use qshr::prelude::*;
+///
+/// set_var("QSHR_EXAMPLE", "value");
+/// assert_eq!(var("QSHR_EXAMPLE").unwrap(), "value");
+/// remove_var("QSHR_EXAMPLE");
+/// ```
 pub fn set_var(key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) {
     unsafe {
         env::set_var(key, value);
@@ -17,6 +31,9 @@ pub fn set_var(key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) {
 }
 
 /// Removes an environment variable for the current process.
+///
+/// This is a thin wrapper around [`std::env::remove_var`]; removing a missing
+/// entry is a no-op.
 pub fn remove_var(key: impl AsRef<OsStr>) {
     unsafe {
         env::remove_var(key);
@@ -75,5 +92,11 @@ mod tests {
         );
         remove_var("CRAB_SHELL_TEST_VAR");
         assert!(var("CRAB_SHELL_TEST_VAR").is_none());
+    }
+
+    #[test]
+    fn removing_missing_var_is_safe() {
+        remove_var("CRAB_SHELL_MISSING_VAR");
+        assert!(var("CRAB_SHELL_MISSING_VAR").is_none());
     }
 }
