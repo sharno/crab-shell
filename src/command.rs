@@ -704,9 +704,11 @@ mod tests {
         let cmd = stderr_command();
         let lines: Result<Vec<_>> = cmd.stream_stderr()?.collect();
         let lines = lines?;
-        assert!(lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("warn")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.to_lowercase().contains("warn"))
+        );
         Ok(())
     }
 
@@ -715,9 +717,11 @@ mod tests {
         let pipeline = sh("echo hi").pipe(stderr_command());
         let lines: Result<Vec<_>> = pipeline.stream_stderr()?.collect();
         let lines = lines?;
-        assert!(lines
-            .iter()
-            .any(|line| line.to_lowercase().contains("warn")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.to_lowercase().contains("warn"))
+        );
         Ok(())
     }
 
@@ -739,9 +743,11 @@ mod tests {
     #[tokio::test]
     async fn async_output_executes() -> Result<()> {
         let output = sh("echo async").output_async().await?;
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("async"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("async")
+        );
         Ok(())
     }
 
@@ -772,24 +778,30 @@ mod tests {
         let file = dir.path().join("out.txt");
         let output = sh("echo hi").tee(&file)?;
         assert!(file.exists());
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("hi"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("hi")
+        );
 
         let pipe_file = dir.path().join("pipe.txt");
         let pipeline = sh("echo hi").pipe(sh("more"));
         let output = pipeline.tee(&pipe_file)?;
         assert!(pipe_file.exists());
-        assert!(String::from_utf8_lossy(&output.stdout)
-            .to_lowercase()
-            .contains("hi"));
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .to_lowercase()
+                .contains("hi")
+        );
 
         let err_file = dir.path().join("err.txt");
         let err_output = stderr_command().tee_stderr(&err_file)?;
         assert!(err_file.exists());
-        assert!(String::from_utf8_lossy(&err_output.stderr)
-            .to_lowercase()
-            .contains("warn"));
+        assert!(
+            String::from_utf8_lossy(&err_output.stderr)
+                .to_lowercase()
+                .contains("warn")
+        );
         Ok(())
     }
 }
