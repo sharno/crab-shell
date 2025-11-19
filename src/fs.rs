@@ -18,9 +18,9 @@ use tokio::{sync::mpsc as async_mpsc, task};
 #[cfg(feature = "async")]
 use tokio_stream::wrappers::ReceiverStream;
 
-use glob::{glob as glob_iter, Pattern};
+use glob::{Pattern, glob as glob_iter};
 use notify::Watcher as _;
-use notify::{self, event::RemoveKind, Event, EventKind, RecommendedWatcher, RecursiveMode};
+use notify::{self, Event, EventKind, RecommendedWatcher, RecursiveMode, event::RemoveKind};
 
 /// Metadata about a filesystem path captured during listing operations.
 #[derive(Debug, Clone)]

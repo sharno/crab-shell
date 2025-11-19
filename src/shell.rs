@@ -549,11 +549,7 @@ impl<T> Iterator for ChunkIter<T> {
                 break;
             }
         }
-        if chunk.is_empty() {
-            None
-        } else {
-            Some(chunk)
-        }
+        if chunk.is_empty() { None } else { Some(chunk) }
     }
 }
 

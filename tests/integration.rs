@@ -1,4 +1,9 @@
-use std::{fs, sync::Mutex, thread, time::Duration};
+use std::{
+    fs,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 use qshr::{pipeline, prelude::*, qshr};
 use tempfile::tempdir;
@@ -68,5 +73,53 @@ fn watch_channel_reports_events_end_to_end() -> qshr::Result<()> {
         .recv_timeout(Duration::from_secs(2))
         .expect("watch channel timed out")?;
     assert_eq!(event.path(), file.as_path());
+    Ok(())
+}
+
+#[test]
+fn macro_cd_parallel_integration() -> qshr::Result<()> {
+    let temp = tempdir()?;
+    let created = temp.path().join("parallel.txt");
+    let hits = Arc::new(Mutex::new(Vec::new()));
+    let hits_a = hits.clone();
+    let hits_b = hits.clone();
+    let original = std::env::current_dir()?;
+
+    qshr! {
+        cd(temp.path()) {
+            write_text("parallel.txt", "inside cd block")?;
+            parallel {
+                let mut guard = hits_a.lock().unwrap();
+                guard.push(String::from("left"));
+            } {
+                let mut guard = hits_b.lock().unwrap();
+                guard.push(String::from("right"));
+            };
+        };
+    }?;
+
+    assert_eq!(std::env::current_dir()?, original);
+    let contents = fs::read_to_string(&created)?;
+    assert!(contents.contains("inside cd block"));
+    assert_eq!(hits.lock().unwrap().len(), 2);
+    Ok(())
+}
+
+#[test]
+fn pipeline_macro_runs_via_run_helper() -> qshr::Result<()> {
+    let temp = tempdir()?;
+    let log = temp.path().join("log.txt");
+
+    qshr! {
+        let capture = pipeline!(cmd!("sh", "-c", "echo CAPTURED") | "tr A-Z a-z");
+        let text = capture.stdout_text()?;
+        assert_eq!(text.trim(), "captured");
+
+        let append = pipeline!(cmd!("sh", "-c", &format!("echo run-helper >> \"{}\"", log.display())));
+        run append;
+    }?;
+
+    let written = fs::read_to_string(&log)?;
+    assert!(written.contains("run-helper"));
     Ok(())
 }
