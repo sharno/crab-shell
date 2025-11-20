@@ -183,9 +183,16 @@ pub fn mkdir_all(path: impl AsRef<Path>) -> Result<()> {
 /// Removes a file or directory tree.
 pub fn rm(path: impl AsRef<Path>) -> Result<()> {
     let path = path.as_ref();
-    if path.is_dir() {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    let file_type = metadata.file_type();
+    if file_type.is_dir() {
         fs::remove_dir_all(path)?;
-    } else if path.exists() {
+    } else {
+        // Handles both files and symlinks; symlink removal must not recurse.
         fs::remove_file(path)?;
     }
     Ok(())
@@ -1040,6 +1047,27 @@ mod tests {
             move_target.parent().unwrap(),
             dest_dir.path(),
         )?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rm_removes_symlink_without_descending() -> crate::Result<()> {
+        use std::os::unix::fs as unix_fs;
+
+        let dir = tempdir()?;
+        let target = dir.path().join("target");
+        mkdir_all(&target)?;
+        let nested = target.join("file.txt");
+        write_text(&nested, "keep me")?;
+
+        let link = dir.path().join("link");
+        unix_fs::symlink(&target, &link)?;
+
+        rm(&link)?;
+        assert!(!link.exists(), "symlink should be removed");
+        assert!(target.exists(), "target directory should remain");
+        assert!(nested.exists(), "nested file should remain");
         Ok(())
     }
 

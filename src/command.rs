@@ -670,14 +670,16 @@ impl Pipeline {
         } = final_stage;
         let status = child.wait()?;
         wait_stdin_writer(stdin_handle)?;
+        let running_result = wait_running_stages(running);
         if !status.success() {
+            let _ = running_result;
             return Err(Error::Command {
                 program,
                 status,
                 stderr: "stderr inherited by parent".into(),
             });
         }
-        wait_running_stages(running)
+        running_result
     }
 
     pub fn lines(&self) -> Result<Shell<String>> {
@@ -763,9 +765,14 @@ impl Pipeline {
                 }
             }
             let stderr_output = stderr_handle.join().unwrap_or_default();
-            match child.wait() {
+            let wait_result = child.wait();
+            let stdin_result = wait_stdin_writer(stdin_handle);
+            let running_result = wait_running_stages(running);
+            match wait_result {
                 Ok(status) => {
                     if !status.success() {
+                        let _ = stdin_result;
+                        let _ = running_result;
                         let _ = tx.send(Err(Error::Command {
                             program,
                             status,
@@ -773,18 +780,19 @@ impl Pipeline {
                         }));
                         return;
                     }
-                    if let Err(err) = wait_stdin_writer(stdin_handle) {
+                    if let Err(err) = stdin_result {
                         let _ = tx.send(Err(err));
                         return;
                     }
+                    if let Err(err) = running_result {
+                        let _ = tx.send(Err(err));
+                    }
                 }
                 Err(err) => {
+                    let _ = stdin_result;
+                    let _ = running_result;
                     let _ = tx.send(Err(Error::Io(err)));
-                    return;
                 }
-            }
-            if let Err(err) = wait_running_stages(running) {
-                let _ = tx.send(Err(err));
             }
         });
         Ok(Shell::new(ReceiverIter::new(rx)))
@@ -835,9 +843,14 @@ impl Pipeline {
                 }
             }
             let stdout_output = stdout_handle.join().unwrap_or_default();
-            match child.wait() {
+            let wait_result = child.wait();
+            let stdin_result = wait_stdin_writer(stdin_handle);
+            let running_result = wait_running_stages(running);
+            match wait_result {
                 Ok(status) => {
                     if !status.success() {
+                        let _ = stdin_result;
+                        let _ = running_result;
                         let _ = tx.send(Err(Error::Command {
                             program,
                             status,
@@ -845,18 +858,19 @@ impl Pipeline {
                         }));
                         return;
                     }
-                    if let Err(err) = wait_stdin_writer(stdin_handle) {
+                    if let Err(err) = stdin_result {
                         let _ = tx.send(Err(err));
                         return;
                     }
+                    if let Err(err) = running_result {
+                        let _ = tx.send(Err(err));
+                    }
                 }
                 Err(err) => {
+                    let _ = stdin_result;
+                    let _ = running_result;
                     let _ = tx.send(Err(Error::Io(err)));
-                    return;
                 }
-            }
-            if let Err(err) = wait_running_stages(running) {
-                let _ = tx.send(Err(err));
             }
         });
         Ok(Shell::new(ReceiverIter::new(rx)))

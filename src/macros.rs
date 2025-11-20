@@ -261,8 +261,15 @@ pub fn with_dir(
     use std::env;
     let original = env::current_dir()?;
     env::set_current_dir(path)?;
+    struct DirGuard(std::path::PathBuf);
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.0);
+        }
+    }
+    let guard = DirGuard(original);
     let result = f();
-    env::set_current_dir(original)?;
+    drop(guard);
     result
 }
 
@@ -306,6 +313,19 @@ mod tests {
         })?;
         assert_eq!(env::current_dir()?, original);
         Ok(())
+    }
+
+    #[test]
+    fn with_dir_restores_on_panic() {
+        let original = env::current_dir().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = with_dir(temp.path(), || -> crate::Result<()> {
+                panic!("boom");
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(env::current_dir().unwrap(), original);
     }
 
     #[test]
