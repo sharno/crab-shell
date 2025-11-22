@@ -261,7 +261,10 @@ fn walk_avoids_symlink_cycles() -> crate::Result<()> {
     Ok(())
 }
 
-fn next_event<F>(events: &mut Shell<crate::Result<WatchEvent>>, predicate: F) -> crate::Result<WatchEvent>
+fn next_event<F>(
+    events: &mut Shell<crate::Result<WatchEvent>>,
+    predicate: F,
+) -> crate::Result<WatchEvent>
 where
     F: Fn(&WatchEvent) -> bool,
 {

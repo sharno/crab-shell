@@ -1,6 +1,9 @@
 use crate::{Error, Result, Shell};
 
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::entries::PathEntry;
 

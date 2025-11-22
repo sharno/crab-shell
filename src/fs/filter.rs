@@ -21,10 +21,7 @@ pub fn filter_extension(
 }
 
 /// Keeps entries at or above the specified size (in bytes).
-pub fn filter_size(
-    entries: Shell<Result<PathEntry>>,
-    min_bytes: u64,
-) -> Shell<Result<PathEntry>> {
+pub fn filter_size(entries: Shell<Result<PathEntry>>, min_bytes: u64) -> Shell<Result<PathEntry>> {
     entries.filter_map(move |entry| match entry {
         Ok(entry) => (entry.size() >= min_bytes).then_some(Ok(entry)),
         Err(err) => Some(Err(err)),

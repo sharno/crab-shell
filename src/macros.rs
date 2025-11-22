@@ -258,8 +258,8 @@ pub fn with_dir(
     path: impl AsRef<std::path::Path>,
     f: impl FnOnce() -> crate::Result<()>,
 ) -> crate::Result<()> {
-    use std::env;
     use std::cell::Cell;
+    use std::env;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     fn dir_lock() -> &'static Mutex<()> {
@@ -268,7 +268,7 @@ pub fn with_dir(
     }
 
     thread_local! {
-        static DIR_DEPTH: Cell<usize> = Cell::new(0);
+        static DIR_DEPTH: Cell<usize> = const { Cell::new(0) };
     }
 
     let owns_lock = DIR_DEPTH.with(|cell| {

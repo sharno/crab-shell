@@ -105,7 +105,12 @@ fn pathext_extensions() -> Vec<String> {
                 .collect()
         })
         .filter(|exts: &Vec<String>| !exts.is_empty())
-        .unwrap_or_else(|| vec!["com", "exe", "bat", "cmd"].into_iter().map(str::to_string).collect())
+        .unwrap_or_else(|| {
+            vec!["com", "exe", "bat", "cmd"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        })
 }
 
 #[cfg(test)]
@@ -140,7 +145,10 @@ mod tests {
 
         let relative = target.strip_prefix(&cwd).unwrap();
         let result = which(relative).unwrap();
-        assert_eq!(result.canonicalize().unwrap(), target.canonicalize().unwrap());
+        assert_eq!(
+            result.canonicalize().unwrap(),
+            target.canonicalize().unwrap()
+        );
     }
 
     #[test]

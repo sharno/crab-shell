@@ -14,7 +14,7 @@ use std::{
 use tokio::task;
 
 use super::{
-    builder::CommandOutput, Command, ReceiverIter, StdinJoinHandle, feed_child_stdin,
+    Command, ReceiverIter, StdinJoinHandle, builder::CommandOutput, feed_child_stdin,
     wait_stdin_writer,
 };
 
@@ -201,13 +201,23 @@ impl Pipeline {
                         Ok(_) => {
                             let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
                             if tx.send(Ok(send_line)).is_err() {
-                                cleanup(&mut child, &mut stdin_handle, &mut running, &mut stderr_handle);
+                                cleanup(
+                                    &mut child,
+                                    &mut stdin_handle,
+                                    &mut running,
+                                    &mut stderr_handle,
+                                );
                                 return;
                             }
                         }
                         Err(err) => {
                             if tx.send(Err(Error::Io(err))).is_err() {
-                                cleanup(&mut child, &mut stdin_handle, &mut running, &mut stderr_handle);
+                                cleanup(
+                                    &mut child,
+                                    &mut stdin_handle,
+                                    &mut running,
+                                    &mut stderr_handle,
+                                );
                             }
                             return;
                         }
@@ -220,8 +230,11 @@ impl Pipeline {
                 .unwrap_or_default();
             let wait_result = child.wait();
             let stdin_result = wait_stdin_writer(stdin_handle.take());
-            let running_result =
-                if let Some(stages) = running.take() { wait_running_stages(stages) } else { Ok(()) };
+            let running_result = if let Some(stages) = running.take() {
+                wait_running_stages(stages)
+            } else {
+                Ok(())
+            };
             match wait_result {
                 Ok(status) => {
                     if !status.success() {
@@ -304,13 +317,23 @@ impl Pipeline {
                         Ok(_) => {
                             let send_line = line.trim_end_matches(&['\r', '\n'][..]).to_string();
                             if tx.send(Ok(send_line)).is_err() {
-                                cleanup(&mut child, &mut stdin_handle, &mut running, &mut stdout_handle);
+                                cleanup(
+                                    &mut child,
+                                    &mut stdin_handle,
+                                    &mut running,
+                                    &mut stdout_handle,
+                                );
                                 return;
                             }
                         }
                         Err(err) => {
                             if tx.send(Err(Error::Io(err))).is_err() {
-                                cleanup(&mut child, &mut stdin_handle, &mut running, &mut stdout_handle);
+                                cleanup(
+                                    &mut child,
+                                    &mut stdin_handle,
+                                    &mut running,
+                                    &mut stdout_handle,
+                                );
                             }
                             return;
                         }
@@ -323,8 +346,11 @@ impl Pipeline {
                 .unwrap_or_default();
             let wait_result = child.wait();
             let stdin_result = wait_stdin_writer(stdin_handle.take());
-            let running_result =
-                if let Some(stages) = running.take() { wait_running_stages(stages) } else { Ok(()) };
+            let running_result = if let Some(stages) = running.take() {
+                wait_running_stages(stages)
+            } else {
+                Ok(())
+            };
             match wait_result {
                 Ok(status) => {
                     if !status.success() {

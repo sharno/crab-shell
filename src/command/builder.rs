@@ -13,7 +13,9 @@ use std::{
 #[cfg(feature = "async")]
 use tokio::{io::AsyncWriteExt, process::Command as TokioCommand, task};
 
-use super::{Pipeline, ReceiverIter, StdinJoinHandle, StdinSource, feed_child_stdin, wait_stdin_writer};
+use super::{
+    Pipeline, ReceiverIter, StdinJoinHandle, StdinSource, feed_child_stdin, wait_stdin_writer,
+};
 
 /// Alias to make builder intentions clearer in docs (`CommandBuilder` == [`Command`]).
 #[allow(dead_code)]
