@@ -259,15 +259,48 @@ pub fn with_dir(
     f: impl FnOnce() -> crate::Result<()>,
 ) -> crate::Result<()> {
     use std::env;
+    use std::cell::Cell;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn dir_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    thread_local! {
+        static DIR_DEPTH: Cell<usize> = Cell::new(0);
+    }
+
+    let owns_lock = DIR_DEPTH.with(|cell| {
+        let current = cell.get();
+        cell.set(current + 1);
+        current == 0
+    });
+    let lock_guard: Option<MutexGuard<'static, ()>> = if owns_lock {
+        Some(dir_lock().lock().unwrap_or_else(|err| err.into_inner()))
+    } else {
+        None
+    };
     let original = env::current_dir()?;
     env::set_current_dir(path)?;
-    struct DirGuard(std::path::PathBuf);
+    struct DirGuard {
+        original: std::path::PathBuf,
+        lock: Option<MutexGuard<'static, ()>>,
+    }
     impl Drop for DirGuard {
         fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.0);
+            let _ = std::env::set_current_dir(&self.original);
+            drop(self.lock.take());
+            DIR_DEPTH.with(|cell| {
+                let current = cell.get();
+                cell.set(current.saturating_sub(1));
+            });
         }
     }
-    let guard = DirGuard(original);
+    let guard = DirGuard {
+        original,
+        lock: lock_guard,
+    };
     let result = f();
     drop(guard);
     result
