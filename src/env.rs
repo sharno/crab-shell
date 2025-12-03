@@ -59,7 +59,7 @@ pub fn which(program: impl AsRef<OsStr>) -> Option<PathBuf> {
     let program = program.as_ref();
     let path = Path::new(program);
     // If the user provided an explicit path (absolute or relative), resolve it directly.
-    if path.is_absolute() || path.parent().is_some() {
+    if path.is_absolute() || path.components().count() > 1 {
         let meta = std::fs::symlink_metadata(path).ok()?;
         if meta.file_type().is_dir() {
             return None;
