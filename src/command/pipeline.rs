@@ -79,11 +79,6 @@ impl Pipeline {
         })
     }
 
-    #[deprecated(note = "use `stdout_text` instead")]
-    pub fn read(&self) -> Result<String> {
-        self.stdout_text()
-    }
-
     pub fn stdout_text(&self) -> Result<String> {
         self.output()?.stdout_string()
     }

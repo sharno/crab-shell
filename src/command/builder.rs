@@ -178,12 +178,6 @@ impl Command {
     }
 
     /// Returns the command stdout decoded as UTF-8 text.
-    #[deprecated(note = "use `stdout_text` instead")]
-    pub fn read(&self) -> Result<String> {
-        self.stdout_text()
-    }
-
-    /// Returns the command stdout decoded as UTF-8 text.
     pub fn stdout_text(&self) -> Result<String> {
         self.output()?.stdout_string()
     }
@@ -342,12 +336,6 @@ impl Command {
     #[cfg(feature = "async")]
     pub async fn run_async(&self) -> Result<()> {
         self.output_async().await.map(|_| ())
-    }
-
-    /// Reads stdout asynchronously as UTF-8 text.
-    #[cfg(feature = "async")]
-    pub async fn read_async(&self) -> Result<String> {
-        self.output_async().await?.stdout_string()
     }
 
     /// Creates a [`Pipeline`] with another command.
